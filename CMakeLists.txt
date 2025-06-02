@@ -68,19 +68,25 @@ install(
     RUNTIME DESTINATION bin
 )
 
-### Configure unit tests
-enable_testing()
+# Option to control building tests
+option(PSD_PROJECTION_BUILD_TESTS "Build psd_projection tests" ON)
 
-add_executable(
-  tests
-  test/tests.cpp
-)
-target_link_libraries(
-  tests
-  GTest::gtest_main
-  ${PSD_LIB}
-  nvJitLink # avoid linking error
-)
+# Only build tests if enabled
+if(PSD_PROJECTION_BUILD_TESTS)
+  ### Configure unit tests
+  enable_testing()
 
-include(GoogleTest)
-gtest_discover_tests(tests)
+  add_executable(
+    tests
+    test/tests.cpp
+  )
+  target_link_libraries(
+    tests
+    GTest::gtest_main
+    ${PSD_LIB}
+    nvJitLink # avoid linking error
+  )
+
+  include(GoogleTest)
+  gtest_discover_tests(tests)
+endif()
