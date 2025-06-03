@@ -16,7 +16,8 @@ void lopbcg(
     const int n,
     const int m ,      // number of eigenpairs
     const int maxiter, // maximum iterations
-    const double tol   // convergence tolerance
+    const double tol,   // convergence tolerance
+    const bool verbose
 ) {
     assert(m > 0);
     assert(n > 0);
@@ -139,10 +140,19 @@ void lopbcg(
                                  &neg1, X_k, n, Lam_k, m,
                                  &one, R_k, n));
 
-        // if the norm of R_k is less than tol, break
         CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
-        if (norm_R_k < tol)
+
+        if (verbose) {
+            std::cout << "LOPBCG iter: " << iter << "||R_k||_F = " << norm_R_k << std::endl;
+        }
+
+        // if the norm of R_k is less than tol, break
+        if (norm_R_k < tol) {
+            if (verbose) {
+                std::cout << "Converged: ||R_k||_F < tol" << std::endl;
+            }
             break;
+        }
 
         // concatenate X_k, R_k, and Delta_X_k into XRD
         CHECK_CUDA(cudaMemcpy(XRD            ,       X_k, n * m * sizeof(double), D2D));
@@ -177,10 +187,42 @@ void lopbcg(
                                         3*m, T_XRD, 3*m, Lam_all, d_work_eig_XRD, lwork_eig_XRD, devInfo));
 
         // XRD_tmp = Q * T
-        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
-                                &one, XRD_tmp, n, T, m,
+        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, 3*m, 3*m,
+                                &one, XRD, n, T_XRD, 3*m,
                                 &zero, XRD_tmp, n));
+        
+
+        // // Delta_X_k = XRD_tmp(:, 2m:3m) - X_k
+        // CHECK_CUBLAS(cublasDcopy(cublasH, n * m, XRD_tmp + 2*m * n, 1, Delta_X_k, 1));
+        // CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k + 2*m * n, 1, Delta_X_k, 1));
+
+        // // X_k = XRD_tmp(2m:3m)
+        // CHECK_CUBLAS(cublasDcopy(cublasH, n * m, XRD_tmp + 2*m * n, 1, X_k, 1));
+        
+        // // Lam_k = Lam_all(2m:3m)
+        // CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all, 2*m, Lam_k, 1));
+
+        // Delta_X_k = XRD_tmp(:, 2m:3m) - X_k
+        for (int i = 0; i < m; ++i) {
+            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, Delta_X_k + i*n, 1));
+            CHECK_CUBLAS(cublasDaxpy(cublasH, n, &neg1, X_k + i*n, 1, Delta_X_k + i*n, 1));
+        }
+
+        // X_k = XRD_tmp(2m:3m)
+        for (int i = 0; i < m; ++i) {
+            // X_k(:,i) = XRD_tmp(:,2*m+i)
+            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, X_k + i*n, 1));
+        }
+        
+        // Lam_k = Lam_all(2m:3m)
+        CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all + 2*m, 1, Lam_k, 1));
     }
+
+    /* Copy results to output */
+    // V = X_k
+    CHECK_CUBLAS(cublasDcopy(cublasH, n * m, X_k, 1, V, 1));
+    // D = Lam_k
+    CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_k, 1, D, 1));
 
 
     // Free device memory

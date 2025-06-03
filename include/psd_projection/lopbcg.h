@@ -8,7 +8,8 @@ void lopbcg(
     const int n,
     const int m ,    // number of eigenpairs
     const int maxiter = 100, // maximum iterations
-    const double tol = 1e-8  // convergence tolerance
+    const double tol = 1e-8,  // convergence tolerance
+    const bool verbose = false // verbosity flag
 );
 
 #endif // PSD_PROJECTION_LOPBCG_H
