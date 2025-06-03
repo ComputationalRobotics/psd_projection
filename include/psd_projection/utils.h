@@ -1,19 +1,26 @@
 #ifndef PSD_PROJECTION_UTILS_H
 #define PSD_PROJECTION_UTILS_H
 
+#include <iostream>
+#include <iomanip>
+
 #define D2H cudaMemcpyDeviceToHost
 #define H2D cudaMemcpyHostToDevice
 #define D2D cudaMemcpyDeviceToDevice
 
 // Print an n×n matrix of doubles
-void printMatrixDouble(const double* dM, int n) {
-    size_t N = size_t(n)*n;
+inline void printMatrixDouble(const double* dM, int n, int m = -1) {
+    // If m is not specified, use n for a square matrix
+    if (m == -1)
+        m = n;
+
+    size_t N = size_t(n) * m;
     std::vector<double> hM(N);
     CHECK_CUDA(cudaMemcpy(hM.data(), dM, N*sizeof(double), cudaMemcpyDeviceToHost));
     for(int i = 0; i < n; ++i) {
-        for(int j = 0; j < n; ++j) {
+        for(int j = 0; j < m; ++j) {
             std::cout << std::fixed << std::setprecision(6)
-                      << hM[i*n + j] << " ";
+                      << hM[j*n + i] << " ";
         }
         std::cout << "\n";
     }
@@ -21,7 +28,7 @@ void printMatrixDouble(const double* dM, int n) {
 }
 
 // Print an n×n matrix of floats
-void printMatrixFloat(const float* dM, int n) {
+inline void printMatrixFloat(const float* dM, int n) {
     size_t N = size_t(n)*n;
     std::vector<float> hM(N);
     CHECK_CUDA(cudaMemcpy(hM.data(), dM, N*sizeof(float), cudaMemcpyDeviceToHost));
@@ -36,7 +43,7 @@ void printMatrixFloat(const float* dM, int n) {
 }
 
 // Print an n×n matrix of __half
-void printMatrixHalf(const __half* dM, int n) {
+inline void printMatrixHalf(const __half* dM, int n) {
     size_t N = size_t(n)*n;
     std::vector<__half> hM(N);
     CHECK_CUDA(cudaMemcpy(hM.data(), dM, N*sizeof(__half), cudaMemcpyDeviceToHost));

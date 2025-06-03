@@ -12,6 +12,7 @@
 
 #include <cuda_runtime_api.h>
 #include <cusparse.h>
+#include <iostream>
 
 // Check if the function returns a CUDA error
 #define CHECK_CUDA(func)                                                       \
