@@ -8,7 +8,7 @@
 
 TEST(LOPBCG, Simple)
 {
-    size_t n = 4;
+    size_t n = 7;
     size_t m = 2; // number of eigenpairs to compute
     size_t nn = n * n;
 
