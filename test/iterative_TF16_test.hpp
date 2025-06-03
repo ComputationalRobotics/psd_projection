@@ -149,7 +149,7 @@ void generateAndProject(int n,
     cudaFree(dLambda); cudaFree(dW); cudaFree(dWork_ev);
 }
 
-TEST(IterativeTF16, RandomScaled)
+TEST(IterativeTF16, UniformScaled)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
@@ -182,7 +182,7 @@ TEST(IterativeTF16, RandomScaled)
     ASSERT_LE(final_err, 1e-2) << "Final error: " << final_err;
 }
 
-TEST(IterativeTF16, RandomNonScaled)
+TEST(IterativeTF16, UniformNonScaled)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
