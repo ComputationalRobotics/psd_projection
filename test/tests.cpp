@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "iterative_TF16_test.hpp"
+
 int main(int argc, char **argv)
 {
     // Execute all the included tests
