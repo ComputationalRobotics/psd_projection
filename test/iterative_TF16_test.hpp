@@ -155,7 +155,7 @@ TEST(IterativeTF16, Random)
     CHECK_CUBLAS(cublasCreate(&cublasH));
     CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
 
-    size_t n = 10;
+    size_t n = 1024;
     size_t nn = n*n;
 
     double *dA, *dA_psd;
