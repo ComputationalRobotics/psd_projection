@@ -248,10 +248,10 @@ void projection_TF16(
             dA_our, n) );
 
         // Compute Frobenius norm ||A_our||_F
-        float fro_err = 0.0f;
-        CHECK_CUBLAS( cublasSnrm2(cublasH, nn, dA_our, 1, &fro_err) );
+        // float fro_err = 0.0f;
+        // CHECK_CUBLAS( cublasSnrm2(cublasH, nn, dA_our, 1, &fro_err) );
 
-        printf("Iter: %d | Fro norm = %.10f \n", iter, fro_err);
+        // printf("Iter: %d | Fro norm = %.10f \n", iter, fro_err);
     }
 
     // final combine: A_our = A_orig * (A_our + I) / 2
