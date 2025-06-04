@@ -21,13 +21,14 @@ void express_FP32(
 
     /* Allocations */
     // device memory
-    float *A, *A2, *A3, *A5, *I, *W;
+    float *A, *A2, *A3, *A5, *I, *W, *Wout;
     CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&A5, nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&I,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&W,  nn * sizeof(float)) );
+    CHECK_CUDA( cudaMalloc(&Wout,  nn * sizeof(float)) );
 
     // useful constants
     const float half       =  0.5f;
@@ -106,17 +107,17 @@ void express_FP32(
 
     /* Compute A = (I + A)/2 */
     // A = 1 * I + A
-    CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A, 1, I, 1) );
+    CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, I, 1, A, 1) );
     // A = 0.5 * A
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
     /* Multiply the original matrix by A */
-    // W = W * A
-    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, W, n) );
+    // Wout = W * A
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, Wout, n) );
 
     /* Copy the result back to mat */
     std::vector<float> A_h_f(nn);
-    CHECK_CUDA( cudaMemcpy(A_h_f.data(), A, nn * sizeof(float), D2H) );
+    CHECK_CUDA( cudaMemcpy(A_h_f.data(), Wout, nn * sizeof(float), D2H) );
     for (size_t i = 0; i < nn; i++) {
         A_h_d[i] = static_cast<double>(A_h_f[i]);
     }
@@ -130,4 +131,5 @@ void express_FP32(
     CHECK_CUDA( cudaFree(A5) );
     CHECK_CUDA( cudaFree(I) );
     CHECK_CUDA( cudaFree(W) );
+    CHECK_CUDA( cudaFree(Wout) );
 }

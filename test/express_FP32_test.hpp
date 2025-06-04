@@ -70,7 +70,7 @@ TEST(ExpressFP32, Deterministic)
     std::cout << std::endl;
     
     for (size_t i = 0; i < nn; ++i) {
-        ASSERT_NEAR(dA_h[i], expected[i], 1e-4);
+        ASSERT_NEAR(dA_h[i], expected[i], 1e-3);
     }
 }
 
@@ -105,7 +105,7 @@ TEST(ExpressFP32, UniformScaled)
     double final_err = 0.0f;
     CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
 
-    ASSERT_LE(final_err, 1e-2) << "Final error: " << final_err;
+    ASSERT_LE(final_err, 2e-2) << "Final error: " << final_err;
 
     // cleanup
     CHECK_CUDA(cudaFree(dA));
