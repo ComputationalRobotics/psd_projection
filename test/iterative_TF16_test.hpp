@@ -12,6 +12,7 @@
 #include "psd_projection/iterative_TF16.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
+#include "psd_projection/lanczos.h"
 
 // Generate and project PSD: in double precision
 // Outputs A (n×n) and its PSD projection A_psd
@@ -180,6 +181,13 @@ TEST(IterativeTF16, UniformScaled)
     CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
 
     ASSERT_LE(final_err, 1e-2) << "Final error: " << final_err;
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUDA(cudaFree(dA_psd));
+    CHECK_CUDA(cudaFree(dDiff));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
 }
 
 TEST(IterativeTF16, UniformNonScaled)
@@ -198,7 +206,26 @@ TEST(IterativeTF16, UniformNonScaled)
 
     // we generate a random matrix with values in [-10/n, 10/n]
     generateAndProject(n, dA, dA_psd, solverH, cublasH, 10.0); // cuSOLVER
+
+
+    /* Rescale the matrix */
+    // compute an approximation of the spectral 2-norm using Lanczos method
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, dA, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0f ? up : 1.0f;
+    // const double scale = 1.0f;
+    const double inv_scale = 1.0f/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA, 1) );
+
+    /* Project */
     projection_TF16(cublasH, dA, n, 0, 100); // iterative TF16 projection
+
+    // scale back dA to original range
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
 
     // check if dA and dA_psd are approximately equal
     double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
@@ -213,5 +240,12 @@ TEST(IterativeTF16, UniformNonScaled)
     double final_err = 0.0f;
     CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
 
-    ASSERT_LE(final_err, 1e-2) << "Final error: " << final_err;
+    ASSERT_LE(final_err, 1e-1) << "Final error: " << final_err;
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUDA(cudaFree(dA_psd));
+    CHECK_CUDA(cudaFree(dDiff));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
 }

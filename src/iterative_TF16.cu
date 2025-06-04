@@ -81,14 +81,6 @@ void projection_TF16(
     CHECK_CUDA( cudaMemcpy(dA_orig, A_h.data(), nn * sizeof(float), H2D) );
     CHECK_CUDA( cudaMemcpy(dA_our,  A_h.data(), nn * sizeof(float), H2D) );
 
-    // float frob_norm;
-    // CHECK_CUBLAS( cublasSnrm2(cublasH, nn, dA_orig, 1, &frob_norm) );
-
-    // scale to have eigenvalues in [-1, 1]
-    // const float scale = frob_norm > 0.0f ? frob_norm : 1.0f;
-    const float scale = 1.0f;
-    const float inv_scale = 1.0f/scale;
-    CHECK_CUBLAS( cublasSscal(cublasH, nn, &inv_scale, dA_our, 1) );
 
     // build identity I on device
     std::vector<float> I_h(nn, 0.0f);
@@ -256,10 +248,10 @@ void projection_TF16(
             dA_our, n) );
 
         // Compute Frobenius norm ||A_our||_F
-        // float fro_err = 0.0f;
-        // CHECK_CUBLAS( cublasSnrm2(cublasH, nn, dA_our, 1, &fro_err) );
+        float fro_err = 0.0f;
+        CHECK_CUBLAS( cublasSnrm2(cublasH, nn, dA_our, 1, &fro_err) );
 
-        // printf("Iter: %d | Fro norm = %.10f \n", iter, fro_err);
+        printf("Iter: %d | Fro norm = %.10f \n", iter, fro_err);
     }
 
     // final combine: A_our = A_orig * (A_our + I) / 2
@@ -288,7 +280,6 @@ void projection_TF16(
 
     CHECK_CUDA( cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice) );
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, dA_our, 1) );
-    CHECK_CUBLAS( cublasSscal(cublasH, nn, &scale, dA_our, 1) );
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     // copy the result back to mat by converting the float matrix to double using the host
