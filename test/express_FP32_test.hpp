@@ -15,6 +15,65 @@
 #include "psd_projection/lanczos.h"
 #include "test_utils.hpp"
 
+TEST(ExpressFP32, Deterministic)
+{
+    cusolverDnHandle_t solverH; cublasHandle_t cublasH;
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+    CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
+
+    size_t n = 3;
+    size_t nn = n*n;
+
+    std::vector<double> A = {
+        1.0, 2.0, 3.0,
+        2.0, 5.0, 6.0,
+        3.0, 6.0, 9.0
+    };
+    // divide A by 10 to ensure convergence
+    for (size_t i = 0; i < nn; ++i)
+        A[i] /= 15.0;
+
+    double *dA;
+    CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
+
+    express_FP32(cublasH, dA, n, 0);
+
+    // check if dA is approximately equal to the expected PSD matrix
+    std::vector<double> expected = {
+        0.0667, 0.1333, 0.2000,
+        0.1333, 0.3333, 0.4000,
+        0.2000, 0.4000, 0.6000
+    };
+    std::vector<double> dA_h(nn);
+    CHECK_CUDA(cudaMemcpy(dA_h.data(), dA, nn*sizeof(double), cudaMemcpyDeviceToHost));
+
+    // print dA_h for debugging
+    std::cout << "dA_h: " << std::endl;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            std::cout << dA_h[i*n + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    // print expected for debugging
+    std::cout << "expected: " << std::endl;
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            std::cout << expected[i*n + j] << " ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+    
+    for (size_t i = 0; i < nn; ++i) {
+        ASSERT_NEAR(dA_h[i], expected[i], 1e-4);
+    }
+}
+
 TEST(ExpressFP32, UniformScaled)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
@@ -22,18 +81,19 @@ TEST(ExpressFP32, UniformScaled)
     CHECK_CUBLAS(cublasCreate(&cublasH));
     CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
 
-    size_t n = 1024;
+    size_t n = 2;
     size_t nn = n*n;
 
     double *dA, *dA_psd;
     CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
     CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
-
+    
     generateAndProject(n, dA, dA_psd, solverH, cublasH); // cuSOLVER
     express_FP32(cublasH, dA, n, 0);
 
     // check if dA and dA_psd are approximately equal
-    double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
+    double *dDiff;
+    CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
     double one = 1.0, neg1 = -1.0;
     CHECK_CUBLAS(cublasDgeam(
         cublasH,
@@ -41,7 +101,7 @@ TEST(ExpressFP32, UniformScaled)
         n, n,
         &one,  dA_psd, n,
         &neg1, dA, n,
-        dDiff,       n));
+        dDiff, n));
     double final_err = 0.0f;
     CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
 

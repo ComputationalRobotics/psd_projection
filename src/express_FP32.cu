@@ -48,9 +48,8 @@ void express_FP32(
 
     // convert the host matrix to float
     std::vector<float> A_h(nn);
-    for (int i = 0; i < nn; i++) {
+    for (int i = 0; i < nn; i++)
         A_h[i] = static_cast<float>(A_h_d[i]);
-    }
 
     // copy the float host matrix to the device
     CHECK_CUDA( cudaMemcpy(A, A_h.data(), nn * sizeof(float), H2D) );
@@ -109,11 +108,11 @@ void express_FP32(
     // A = 1 * I + A
     CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A, 1, I, 1) );
     // A = 0.5 * A
-    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, I, 1) );
+    CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
-    /* Multiply the original matrix by A coefficient-wise */
-    // W = A .* W
-    CHECK_CUBLAS( cublasSdgmm(cublasH, CUBLAS_SIDE_LEFT, n, n, W, n, A, 1, W, n) );
+    /* Multiply the original matrix by A */
+    // W = W * A
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, W, n) );
 
     /* Copy the result back to mat */
     std::vector<float> A_h_f(nn);
@@ -131,5 +130,4 @@ void express_FP32(
     CHECK_CUDA( cudaFree(A5) );
     CHECK_CUDA( cudaFree(I) );
     CHECK_CUDA( cudaFree(W) );
-    CHECK_CUBLAS( cublasDestroy(cublasH) );
 }
