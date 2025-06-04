@@ -10,17 +10,13 @@
 #include "psd_projection/utils.h"
 
 void approximate_two_norm(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
     const double* A, size_t n,
     double* lo, double* up,
     size_t max_iter, double tol
 ) {
     /* Allocations */
-    // cuBLAS/cuSOLVER handles
-    cublasHandle_t cublasH;
-    cusolverDnHandle_t cusolverH ;
-    CHECK_CUBLAS(cublasCreate(&cublasH));
-    CHECK_CUSOLVER(cusolverDnCreate(&cusolverH));
-
     // constants
     const double zero = 0.0;
     const double one = 1.0;
@@ -193,7 +189,4 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(uk));
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
-
-    CHECK_CUSOLVER(cusolverDnDestroy(cusolverH));
-    CHECK_CUBLAS(cublasDestroy(cublasH));
 }

@@ -9,6 +9,8 @@
 /// @param max_iter Maximum number of Lanczos iterations
 /// @param tol Relative residual tolerance for convergence
 void approximate_two_norm(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
     const double* A, size_t n,
     double* lo, double* up,
     size_t max_iter = 50, double tol = 1e-6

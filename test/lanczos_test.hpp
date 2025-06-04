@@ -7,6 +7,11 @@
 
 TEST(Lanczos, Simple)
 {
+    cublasHandle_t cublasH;
+    cusolverDnHandle_t cusolverH ;
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+    CHECK_CUSOLVER(cusolverDnCreate(&cusolverH));
+
     size_t n = 5;
 
     // create a simple symmetric matrix A
@@ -27,7 +32,7 @@ TEST(Lanczos, Simple)
 
     // approximate the two-norm using the Lanczos method
     double lo, up;
-    approximate_two_norm(A, n, &lo, &up, 50, 1e-6);
+    approximate_two_norm(cublasH, cusolverH, A, n, &lo, &up, 50, 1e-6);
 
     std::cout << "Actual two-norm: " << two_norm << std::endl;
     std::cout << "Approximate two-norm: [" << lo << ", " << up << "]" << std::endl;
