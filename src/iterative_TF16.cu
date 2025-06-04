@@ -67,7 +67,8 @@ void projection_TF16(
     }
 
     // allocate the device buffers
-    float *dA_our, *dTmp, *dI, *dT1, *dT2, *dF;
+    float *dA_orig, *dA_our, *dTmp, *dI, *dT1, *dT2, *dF;
+    CHECK_CUDA( cudaMalloc(&dA_orig, nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&dA_our,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&dTmp,    nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&dI,      nn * sizeof(float)) );
@@ -76,6 +77,7 @@ void projection_TF16(
     CHECK_CUDA( cudaMalloc(&dF,      nn * sizeof(float)) );
 
     // copy the float host matrix to the device
+    CHECK_CUDA( cudaMemcpy(dA_orig, A_h.data(), nn * sizeof(float), H2D) );
     CHECK_CUDA( cudaMemcpy(dA_our,  A_h.data(), nn * sizeof(float), H2D) );
 
 
@@ -262,6 +264,7 @@ void projection_TF16(
 
     // float2half_kernel<<<blocks,threads>>>(dA_orig, dT3_half, nn);
     // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
+    convertFloatToHalf4(dA_orig, dT3_half, nn);
     convertFloatToHalf4(dF, dT4_half, nn);
     CHECK_CUBLAS( cublasGemmEx(
         cublasH,
@@ -294,6 +297,7 @@ void projection_TF16(
     // std::cout << "PSD projection total time: " << elapsed.count() << " seconds\n";
 
     // cleanup
+    cudaFree(dA_orig);
     cudaFree(dA_our);
     cudaFree(dTmp);
     cudaFree(dI);
