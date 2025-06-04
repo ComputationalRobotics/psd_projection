@@ -85,16 +85,17 @@ void approximate_two_norm(
         
         // beta(k) = norm(w)
         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
-
+        
         if (beta[k] <= tol * (-minus_alpha) && k > 1)
             break;
-
+            
         // V_old = q
         CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V_old, 1));
         // q = w / beta(k)
+        CHECK_CUDA(cudaMemcpy(q, w, n * sizeof(double), cudaMemcpyDeviceToDevice));
         if (beta[k] != 0.0) {
             double beta_inv = 1.0 / beta[k];
-            CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, w, 1));
+            CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, q, 1));
         } else {
             // If beta is zero, we cannot proceed further
             fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);

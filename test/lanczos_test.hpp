@@ -20,15 +20,10 @@ TEST(Lanczos, Simple)
         0.0, 0.0, 1.0, 1.0, 3.0
     };
 
-    // compute its two-norm for reference
-    double two_norm = 0.0;
-    for (size_t i = 0; i < n * n; ++i) {
-        two_norm += h_A[i] * h_A[i];
-    }
-    two_norm = std::sqrt(two_norm);
-
     // copy the matrix to device memory
     CHECK_CUDA(cudaMemcpy(A, h_A.data(), n * n * sizeof(double), cudaMemcpyHostToDevice));
+
+    double two_norm = 7.0890; // actual two-norm of the matrix A
 
     // approximate the two-norm using the Lanczos method
     double lo, up;
@@ -36,4 +31,7 @@ TEST(Lanczos, Simple)
 
     std::cout << "Actual two-norm: " << two_norm << std::endl;
     std::cout << "Approximate two-norm: [" << lo << ", " << up << "]" << std::endl;
+
+    ASSERT_LE(lo, two_norm);
+    ASSERT_GE(up, two_norm);
 }
