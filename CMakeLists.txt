@@ -52,7 +52,7 @@ target_include_directories(${PSD_LIB} PUBLIC ${INCLUDE_DIRS})
 target_link_libraries(
     ${PSD_LIB}
     PUBLIC
-    cudart cusparse cublas cusolver
+    cudart cusparse cublas cusolver cublasLt
     ${CMAD_LIB}
     ${CCOLAMD_LIB}
     ${CHOLMOD_LIB}

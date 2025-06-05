@@ -2,6 +2,7 @@
 
 #include "iterative_TF16_test.hpp"
 #include "express_FP32_test.hpp"
+#include "express_FP32_Lt_test.hpp"
 #include "lopbcg_test.hpp"
 #include "lanczos_test.hpp"
 
