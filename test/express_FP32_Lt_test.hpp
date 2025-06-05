@@ -37,7 +37,11 @@ TEST(ExpressFP32Lt, Deterministic)
     CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
     CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
 
+    auto start = std::chrono::high_resolution_clock::now();
     express_FP32_Lt(cublasH, dA, n, 0);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA is approximately equal to the expected PSD matrix
     std::vector<double> expected = {
@@ -87,7 +91,11 @@ TEST(ExpressFP32Lt, UniformScaled)
     CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
     
     generateAndProject(n, dA, dA_psd, solverH, cublasH); // cuSOLVER
+    auto start = std::chrono::high_resolution_clock::now();
     express_FP32_Lt(cublasH, dA, n, 0);
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA and dA_psd are approximately equal
     double *dDiff;
@@ -138,6 +146,7 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
 
     /* Rescale the matrix */
     // compute an approximation of the spectral 2-norm using Lanczos method
+    auto start = std::chrono::high_resolution_clock::now();
     double lo, up;
     approximate_two_norm(
         cublasH, solverH, dA, n, &lo, &up
@@ -154,6 +163,9 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
 
     // scale back dA to original range
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
+    auto end = std::chrono::high_resolution_clock::now();
+    std::chrono::duration<double> elapsed = end - start;
+    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA and dA_psd are approximately equal
     double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
