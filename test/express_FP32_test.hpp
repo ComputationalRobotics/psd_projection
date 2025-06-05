@@ -20,7 +20,6 @@ TEST(ExpressFP32, Deterministic)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
 
     size_t n = 3;
     size_t nn = n*n;
@@ -79,7 +78,6 @@ TEST(ExpressFP32, UniformScaled)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
 
     size_t n = 1000;
     size_t nn = n*n;
@@ -126,7 +124,6 @@ TEST(ExpressFP32, UniformNonScaled1024)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
 
     size_t n = 1024;
     size_t nn = n*n;
