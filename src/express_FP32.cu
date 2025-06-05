@@ -81,6 +81,10 @@ void express_FP32(
         // A5 = A3 * A2
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A3, n, A2, n, &zero, A5, n) );
 
+        /* Symmetrize A3, A5 */
+        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+        symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
+
         /* Compute A = a * A + b * A3 + c * A5 */
         // A = a * A
         CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
@@ -88,6 +92,9 @@ void express_FP32(
         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
         // A = c * A5 + A
         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &c, A5, 1, A, 1) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
     /* Smoothing function */
@@ -98,11 +105,17 @@ void express_FP32(
         // A3 = A2 * A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
+        /* Symmetrize A3 */
+        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+
         /* Compute A = 1.5 * A - 0.5 * A3 */
         // A = 1.5 * A
         CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
         // A = -0.5 * A3 + A
         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+
+        /* Symmetrize A */
+        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
     /* Compute A = (I + A)/2 */
@@ -111,9 +124,15 @@ void express_FP32(
     // A = 0.5 * A
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
+    /* Symmetrize A */
+    symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+
     /* Multiply the original matrix by A */
     // Wout = W * A
     CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, Wout, n) );
+
+    /* Symmetrize W */
+    symmetrizeFloat(cublasH, Wout, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
     std::vector<float> A_h_f(nn);

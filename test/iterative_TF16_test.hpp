@@ -105,6 +105,12 @@ TEST(IterativeTF16, UniformNonScaled1024)
     double final_err = 0.0f;
     CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
 
+    double dA_psd_norm = 0.0f;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dA_psd, 1, &dA_psd_norm));
+    double relative_err = final_err / dA_psd_norm;
+
+    std::cout << "Relative error: " << std::scientific << std::setprecision(6) << relative_err << std::endl;
+    std::cout << "Final error: " << std::scientific << std::setprecision(6) << final_err << std::endl;
     ASSERT_LE(final_err, 1e-1) << "Final error: " << final_err;
 
     // cleanup

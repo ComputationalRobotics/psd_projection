@@ -58,4 +58,36 @@ inline void printMatrixHalf(const __half* dM, int n) {
     std::cout << std::endl;
 }
 
+/// @brief Symmetrize a matrix M by replacing it by (M + M^T) / 2.
+/// @param cublasH cuBLAS handle
+/// @param M matrix to symmetrize of size n
+/// @param n size of the matrix (n x n)
+/// @param workspace device memory workspace of size n x n
+inline void symmetrizeFloat(
+    cublasHandle_t cublasH, float* M, int n, float* workspace
+) {
+    const float one = 1.0, half = 0.5, zero = 0.0;
+
+    // workspace = M^T
+    CHECK_CUBLAS(cublasSgeam(
+        cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
+        n, n,
+        &one, M, n,
+        &zero, M, n,
+        workspace, n
+    ));
+
+    // M = M + workspace (which is M^T)
+    CHECK_CUBLAS(cublasSgeam(
+        cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n,
+        &one, M, n,
+        &one, workspace, n,
+        M, n
+    ));
+
+    // M = 0.5 * M
+    CHECK_CUBLAS(cublasSscal(cublasH, n * n, &half, M, 1));
+}
+
 #endif // PSD_PROJECTION_UTILS_H
