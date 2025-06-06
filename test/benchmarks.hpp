@@ -19,7 +19,9 @@
 void benchmark_express(
     double radius = 1.0,
     size_t n = 1024,
-    size_t nb_mat = 1
+    size_t nb_mat = 1,
+    int lanczos_max_iter = 50,
+    double lanczos_tol = 1e-6
 ) {
     cusolverDnHandle_t solverH;
     cublasHandle_t cublasH;
@@ -56,7 +58,7 @@ void benchmark_express(
         auto start = std::chrono::high_resolution_clock::now();
         double lo, up;
         approximate_two_norm(
-            cublasH, solverH, dA, n, &lo, &up
+            cublasH, solverH, dA, n, &lo, &up, lanczos_max_iter, lanczos_tol
         );
 
         // scale to have eigenvalues in [-1, 1]
@@ -93,7 +95,7 @@ void benchmark_express(
         /* Solve using express_FP32_Lt */
         start = std::chrono::high_resolution_clock::now();
         approximate_two_norm(
-            cublasH, solverH, dA_Lt, n, &lo, &up
+            cublasH, solverH, dA_Lt, n, &lo, &up, lanczos_max_iter, lanczos_tol
         );
 
         // scale to have eigenvalues in [-1, 1]
@@ -156,4 +158,5 @@ TEST(Benchmarks, Uniform)
     benchmark_express(10.0, 1000, 10);
     benchmark_express(1.0, 5000, 10);
     benchmark_express(10.0, 5000, 10);
+    benchmark_express(10.0, 5000, 10, 10, 1e-3);
 }
