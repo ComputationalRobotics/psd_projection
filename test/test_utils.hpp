@@ -22,7 +22,8 @@ void generateAndProject(int n,
                         double* dA_psd,
                         cusolverDnHandle_t solverH,
                         cublasHandle_t cublasH,
-                        double radius = 1.0) {
+                        double radius = 1.0,
+                        std::chrono::duration<double>* time = nullptr) {
     size_t nn = size_t(n)*n;
     // 1) Generate random Gaussian M_h on host
     std::vector<double> M_h(nn);
@@ -144,9 +145,14 @@ void generateAndProject(int n,
     CHECK_CUDA(cudaFree(dV));
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
-    std::cout << "Time (cuSOLVER eigendecomp): " 
-              << std::fixed << std::setprecision(3) 
-              << elapsed.count() << " seconds" << std::endl;
+    if (time) {
+        *time = elapsed;
+    } else {
+        std::cout << "Time (cuSOLVER eigendecomp): " 
+                << std::fixed << std::setprecision(3) 
+                << elapsed.count() << " seconds" << std::endl;
+    }
+
 
     // copy the dA_origin back to dA
     CHECK_CUDA(cudaMemcpy(dA, dA_orig, nn*sizeof(double), cudaMemcpyDeviceToDevice));

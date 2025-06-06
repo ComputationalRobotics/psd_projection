@@ -20,6 +20,8 @@ TEST(ExpressFP32Lt, Deterministic)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
+    cublasLtHandle_t cublasLtH;
+    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 3;
     size_t nn = n*n;
@@ -38,7 +40,7 @@ TEST(ExpressFP32Lt, Deterministic)
     CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
 
     auto start = std::chrono::high_resolution_clock::now();
-    express_FP32_Lt(cublasH, dA, n, 0);
+    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
@@ -75,6 +77,12 @@ TEST(ExpressFP32Lt, Deterministic)
     for (size_t i = 0; i < nn; ++i) {
         ASSERT_NEAR(dA_h[i], expected[i], 1e-3);
     }
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }
 
 TEST(ExpressFP32Lt, UniformScaled)
@@ -82,6 +90,8 @@ TEST(ExpressFP32Lt, UniformScaled)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
+    cublasLtHandle_t cublasLtH;
+    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 1000;
     size_t nn = n*n;
@@ -92,7 +102,7 @@ TEST(ExpressFP32Lt, UniformScaled)
     
     generateAndProject(n, dA, dA_psd, solverH, cublasH); // cuSOLVER
     auto start = std::chrono::high_resolution_clock::now();
-    express_FP32_Lt(cublasH, dA, n, 0);
+    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
@@ -125,6 +135,7 @@ TEST(ExpressFP32Lt, UniformScaled)
     CHECK_CUDA(cudaFree(dDiff));
     CHECK_CUBLAS(cublasDestroy(cublasH));
     CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }
 
 TEST(ExpressFP32Lt, UniformNonScaled1024)
@@ -132,6 +143,8 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
+    cublasLtHandle_t cublasLtH;
+    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 1024;
     size_t nn = n*n;
@@ -159,7 +172,7 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA, 1) );
 
     /* Project */
-    express_FP32_Lt(cublasH, dA, n, 0);
+    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
 
     // scale back dA to original range
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
@@ -194,4 +207,5 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
     CHECK_CUDA(cudaFree(dDiff));
     CHECK_CUBLAS(cublasDestroy(cublasH));
     CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }

@@ -14,12 +14,11 @@
 
 void express_FP32_Lt(
     cublasHandle_t cublasH,
+    cublasLtHandle_t cublasLtH,
     double* mat,
     const int n,
     const int mat_offset
 ) {
-    cublasLtHandle_t cublasLtH;
-    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     // create a workspace for cublasLt
     size_t workspace_size = 32 * 1024 * 1024;
