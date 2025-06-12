@@ -20,6 +20,8 @@ FetchContent_Declare(
 set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
+# Find CUDA Toolkit and use imported targets for linking
+find_package(CUDAToolkit REQUIRED)
 
 ### Find LAPACK and BLAS
 find_package(LAPACK REQUIRED)
@@ -52,7 +54,11 @@ target_include_directories(${PSD_LIB} PUBLIC ${INCLUDE_DIRS})
 target_link_libraries(
     ${PSD_LIB}
     PUBLIC
-    cudart cusparse cublas cusolver cublasLt
+    CUDA::cudart
+    CUDA::cusparse
+    CUDA::cublas
+    CUDA::cusolver
+    CUDA::cublasLt
     ${CMAD_LIB}
     ${CCOLAMD_LIB}
     ${CHOLMOD_LIB}
@@ -84,7 +90,6 @@ if(PSD_PROJECTION_BUILD_TESTS)
     tests
     GTest::gtest_main
     ${PSD_LIB}
-    nvJitLink # avoid linking error
   )
 
   include(GoogleTest)
