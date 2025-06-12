@@ -11,6 +11,7 @@
 #include <cublasLt.h>
 
 #include "psd_projection/express_FP32_Lt.h"
+#include "psd_projection/sample_cublasLt_LtSgemm.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/lanczos.h"
@@ -156,7 +157,93 @@ TEST(Benchmarks, Uniform)
 {
     benchmark_express(1.0, 1000, 10);
     benchmark_express(10.0, 1000, 10);
-    benchmark_express(1.0, 5000, 10);
-    benchmark_express(10.0, 5000, 10);
-    benchmark_express(10.0, 5000, 10, 10, 1e-3);
+    // benchmark_express(1.0, 5000, 10);
+    // benchmark_express(10.0, 5000, 10);
+    // benchmark_express(10.0, 5000, 10, 10, 1e-3);
+}
+
+TEST(Benchmarks, MatMul)
+{
+    cusolverDnHandle_t solverH;
+    cublasHandle_t cublasH;
+    cublasLtHandle_t cublasLtH;
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
+
+    // create a workspace for cublasLt
+    size_t workspace_size = 32 * 1024 * 1024;
+    void* workspace;
+    CHECK_CUDA( cudaMalloc(&workspace, workspace_size) );
+    
+    size_t n = 10000;
+    size_t nn = n*n;
+
+    // create two random matrices
+    float *A, *B, *AB;
+    CHECK_CUDA(cudaMalloc(&A, nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&B, nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&AB, nn*sizeof(float)));
+
+    // generate random matrices
+    std::vector<float> A_h(nn), B_h(nn);
+    srand(1);
+    for(size_t i = 0; i < nn; i++) {
+        A_h[i] = rand() / (float)RAND_MAX - 0.5;
+        B_h[i] = rand() / (float)RAND_MAX - 0.5;
+    }
+    CHECK_CUDA(cudaMemcpy(A, A_h.data(), nn*sizeof(float), cudaMemcpyHostToDevice));
+    CHECK_CUDA(cudaMemcpy(B, B_h.data(), nn*sizeof(float), cudaMemcpyHostToDevice));
+    const float one = 1.0, zero = 0.0;
+
+    // warmup
+    for (int i = 0; i < 100; i++) {
+        CHECK_CUBLAS(cublasSgemm(
+            cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one, A, n,
+            B, n,
+            &zero, AB, n
+        ));
+    }
+    
+    // compute AB using cuBLAS
+    cudaEvent_t start, stop;
+    CHECK_CUDA(cudaEventCreate(&start));
+    CHECK_CUDA(cudaEventCreate(&stop));
+    CHECK_CUDA(cudaEventRecord(start));
+    for (int i = 0; i < 100; i++) {
+        CHECK_CUBLAS(cublasSgemm(
+            cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one, A, n,
+            B, n,
+            &zero, AB, n
+        ));
+    }
+    CHECK_CUDA(cudaEventRecord(stop));
+    CHECK_CUDA(cudaEventSynchronize(stop));
+    float milliseconds = 0;
+    CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
+    std::cout << "cuBLAS time:   " 
+              << std::scientific << milliseconds
+              << " ms" << std::endl;
+
+    // compute ABLt using LtSgemm
+    CHECK_CUDA(cudaEventRecord(start));
+    for (int i = 0; i < 100; i++) {
+        LtSgemm(cublasLtH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, B, n, &zero, AB, n, workspace, workspace_size);
+    }
+    CHECK_CUDA(cudaEventRecord(stop));
+    CHECK_CUDA(cudaEventSynchronize(stop));
+    milliseconds = 0;
+    CHECK_CUDA(cudaEventElapsedTime(&milliseconds, start, stop));
+    std::cout << "cublasLt time: " 
+              << std::scientific << milliseconds 
+              << " ms" << std::endl;
+
+    // free
+    CHECK_CUDA(cudaFree(A));
+    CHECK_CUDA(cudaFree(B));
+    CHECK_CUDA(cudaFree(AB));
 }
