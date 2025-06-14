@@ -58,7 +58,7 @@ void approximate_two_norm(
     // V(:, 1) = q
     CHECK_CUBLAS(cublasDcopy(cublasH, n, q, 1, V, 1));
     // fill V_old with zeros
-    CHECK_CUBLAS(cublasDscal(cublasH, n, &zero, V_old, 1));
+    CHECK_CUDA(cudaMemset(V_old, 0, n * sizeof(double)));
 
     /* Lanczos loop */
     int nb_iter = 0;
