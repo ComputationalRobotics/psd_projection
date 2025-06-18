@@ -8,6 +8,7 @@
 #include <iostream>
 
 #include "psd_projection/express_FP32.h"
+#include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
@@ -121,10 +122,38 @@ void express_FP32(
 
     /* Copy the result back to mat */
     convert_float_to_double(A3, mat + mat_offset, nn);
-    CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */
     CHECK_CUDA( cudaFree(A) );
     CHECK_CUDA( cudaFree(A2) );
     CHECK_CUDA( cudaFree(A3) );
+}
+
+void express_FP32_auto_scale(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t solverH,
+    double* mat,
+    const int n,
+    const int mat_offset
+) {
+    size_t nn = n * n;
+    
+    // Use the Lanczos method to approximate the two-norm of the matrix
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, mat + mat_offset, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
+
+    // project the matrix using the express_FP32 function
+    express_FP32(
+        cublasH, mat + mat_offset, n, 0
+    );
+
+    // rescale the result back to the original scale
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat + mat_offset, 1) );
 }
