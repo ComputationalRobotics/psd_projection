@@ -21,14 +21,10 @@ void express_FP32(
 
     /* Allocations */
     // device memory
-    float *A, *A2, *A3, *A5, *I, *W, *Wout;
+    float *A, *A2, *A3;
     CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
     CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A5, nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&I,  nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&W,  nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&Wout,  nn * sizeof(float)) );
 
     // useful constants
     const float half       =  0.5f;
@@ -37,32 +33,23 @@ void express_FP32(
     const float one_n_half =  1.5f;
     const float zero       =  0.0f;
 
-    // build identity I on device
-    std::vector<float> I_h(nn, 0.0f);
-    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
-    CHECK_CUDA( cudaMemcpy(I, I_h.data(), nn * sizeof(float), H2D) );
-
     /* Convert the initial matrix*/
-    // copy the double matrix back to the host
-    std::vector<double> A_h_d(nn);
-    CHECK_CUDA( cudaMemcpy(A_h_d.data(), mat + mat_offset, nn * sizeof(double), D2H) );
-
-    // convert the host matrix to float
-    std::vector<float> A_h(nn);
-    for (int i = 0; i < nn; i++)
-        A_h[i] = static_cast<float>(A_h_d[i]);
-
-    // copy the float host matrix to the device
-    CHECK_CUDA( cudaMemcpy(A, A_h.data(), nn * sizeof(float), H2D) );
-    CHECK_CUDA( cudaMemcpy(W, A_h.data(), nn * sizeof(float), H2D) );
+    convert_double_to_float(mat + mat_offset, A, nn);
 
     /* Coefficients */
-    std::vector<std::vector<float>> coeff = {
-        {8.4724206924, -24.5001735687, 17.7268180847},
-        {4.2052841187, -3.0549299717, 0.5567536354},
-        {4.0443077087, -2.9473149776, 0.5449726582},
-        {3.5078327656, -2.5842490196, 0.5067413449},
-        {2.5075511932, -1.8485442400, 0.4358045161}
+    // std::vector<std::vector<float>> coeff = {
+    //     {8.4724206924, -24.5001735687, 17.7268180847},
+    //     {4.2052841187, -3.0549299717, 0.5567536354},
+    //     {4.0443077087, -2.9473149776, 0.5449726582},
+    //     {3.5078327656, -2.5842490196, 0.5067413449},
+    //     {2.5075511932, -1.8485442400, 0.4358045161}
+    // };
+    std::vector<std::vector<float>> coeff = { 
+        { 8.3885353390, -23.7796270883, 16.8664591580 }, 
+        { 4.1636476423, -2.9650849331, 0.5297319805 }, 
+        { 4.0042650581, -2.8606348801, 0.5185227850 }, 
+        { 3.4731017481, -2.5082466382, 0.4821470022 }, 
+        { 2.4827239537, -1.7941788274, 0.4146530436 }, 
     };
 
     /* Approximation of the step function */
@@ -78,27 +65,25 @@ void express_FP32(
         // A3 = A2 * A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
-        // A5 = A3 * A2
-        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A3, n, A2, n, &zero, A5, n) );
-
-        /* Symmetrize A3, A5 */
-        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-        symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
-
-        /* Compute A = a * A + b * A3 + c * A5 */
         // A = a * A
         CHECK_CUBLAS( cublasSscal(cublasH, nn, &a, A, 1) );
         // A = b * A3 + A
         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
-        // A = c * A5 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &c, A5, 1, A, 1) );
+        // at this point, A = a * A + b * A3
+
+        /* Symmetrize A3, A5 */
+        // symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+        // symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
+
+        // A = c * A3 * A2 + A
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &c, A3, n, A2, n, &one, A, n) );
 
         /* Symmetrize A */
         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
     /* Smoothing function */
-    for (int i =0; i < 3; i++) {
+    for (int i = 0; i < 3; i++) {
         // A2 = A * A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
 
@@ -119,8 +104,11 @@ void express_FP32(
     }
 
     /* Compute A = (I + A)/2 */
+    // build I on device and store it in A2
+    build_identity(cublasH, A2, n);
+
     // A = 1 * I + A
-    CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, I, 1, A, 1) );
+    CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A2, 1, A, 1) );
     // A = 0.5 * A
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
@@ -128,27 +116,19 @@ void express_FP32(
     symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
 
     /* Multiply the original matrix by A */
-    // Wout = W * A
-    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, W, n, A, n, &zero, Wout, n) );
+    // W = A_origin * A
+    convert_double_to_float(mat + mat_offset, A2, nn);
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
     /* Symmetrize W */
-    symmetrizeFloat(cublasH, Wout, n, A2); // we use A2 as a workspace
+    symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    std::vector<float> A_h_f(nn);
-    CHECK_CUDA( cudaMemcpy(A_h_f.data(), Wout, nn * sizeof(float), D2H) );
-    for (size_t i = 0; i < nn; i++) {
-        A_h_d[i] = static_cast<double>(A_h_f[i]);
-    }
-    CHECK_CUDA( cudaMemcpy(mat + mat_offset, A_h_d.data(), nn * sizeof(double), H2D) );
+    convert_float_to_double(A3, mat + mat_offset, nn);
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */
     CHECK_CUDA( cudaFree(A) );
     CHECK_CUDA( cudaFree(A2) );
     CHECK_CUDA( cudaFree(A3) );
-    CHECK_CUDA( cudaFree(A5) );
-    CHECK_CUDA( cudaFree(I) );
-    CHECK_CUDA( cudaFree(W) );
-    CHECK_CUDA( cudaFree(Wout) );
 }

@@ -3,6 +3,9 @@
 
 #include <iostream>
 #include <iomanip>
+#include <vector>
+#include "psd_projection/check.h"
+#include <cublas_v2.h>
 
 #define D2H cudaMemcpyDeviceToHost
 #define H2D cudaMemcpyHostToDevice
@@ -63,31 +66,42 @@ inline void printMatrixHalf(const __half* dM, int n) {
 /// @param M matrix to symmetrize of size n
 /// @param n size of the matrix (n x n)
 /// @param workspace device memory workspace of size n x n
-inline void symmetrizeFloat(
+void symmetrizeFloat(
     cublasHandle_t cublasH, float* M, int n, float* workspace
-) {
-    const float one = 1.0, half = 0.5, zero = 0.0;
+);
 
-    // workspace = M^T
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &zero, M, n,
-        workspace, n
-    ));
+__global__ void convert_double_to_float_kernel(const double* in, float* out, int n);
 
-    // M = M + workspace (which is M^T)
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH, CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n,
-        &one, M, n,
-        &one, workspace, n,
-        M, n
-    ));
+__global__ void convert_float_to_double_kernel(const float* in, double* out, int n);
 
-    // M = 0.5 * M
-    CHECK_CUBLAS(cublasSscal(cublasH, n * n, &half, M, 1));
-}
+/// @brief Convert an array of doubles to floats in device memory.
+/// @param d_in the input array of doubles in device memory
+/// @param d_out the output array of floats in device memory
+/// @param n the number of elements in the input array
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is
+void convert_double_to_float(const double* d_in, float* d_out, int n, const int threadsPerBlock = 1024);
+
+/// @brief Convert an array of doubles to floats in device memory.
+/// @param d_in the input array of doubles in device memory
+/// @param d_out the output array of floats in device memory
+/// @param n the number of elements in the input array
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is
+void convert_float_to_double(const float* d_in, double* d_out, int n, const int threadsPerBlock = 1024);
+
+__global__ void build_identity_kernel(float* mat, int n);
+
+/// @brief Build an identity matrix of size n x n in device memory (single precision).
+/// @param cublasH cuBLAS handle
+/// @param mat the device memory pointer to store the identity matrix
+/// @param n the size of the identity matrix (n x n)
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is 1024)
+void build_identity(
+    cublasHandle_t cublasH,
+    float* mat,
+    int n,
+    const int threadsPerBlock = 1024
+);
+
+
 
 #endif // PSD_PROJECTION_UTILS_H

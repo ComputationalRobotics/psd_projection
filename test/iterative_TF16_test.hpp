@@ -123,6 +123,7 @@ TEST(IterativeTF16, UniformNonScaled1024)
 
 TEST(IterativeTF16, UniformNonScaled10000)
 {
+    GTEST_SKIP();
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));

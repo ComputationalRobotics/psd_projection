@@ -164,6 +164,8 @@ TEST(Benchmarks, Uniform)
 
 TEST(Benchmarks, MatMul)
 {
+    GTEST_SKIP(); // only activate for benchmarks
+
     cusolverDnHandle_t solverH;
     cublasHandle_t cublasH;
     cublasLtHandle_t cublasLtH;
