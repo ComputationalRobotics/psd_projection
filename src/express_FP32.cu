@@ -71,10 +71,6 @@ void express_FP32(
         CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &b, A3, 1, A, 1) );
         // at this point, A = a * A + b * A3
 
-        /* Symmetrize A3, A5 */
-        // symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
-        // symmetrizeFloat(cublasH, A5, n, A2); // we use A2 as a workspace
-
         // A = c * A3 * A2 + A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &c, A3, n, A2, n, &one, A, n) );
 
