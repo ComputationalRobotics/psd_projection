@@ -264,6 +264,7 @@ double compute_eigenpairs(
     double one = 1.0;
 
     double minus_beta = 0.0;
+    std::vector<double> alpha, beta;
     double minus_alpha;
 
     /* Initialize */
@@ -294,6 +295,7 @@ double compute_eigenpairs(
 
         // alpha = Q(:, m)^T * w
         CHECK_CUBLAS(cublasDdot(cublasH, n, Q + m * n, 1, w, 1, &minus_alpha));
+        alpha.push_back(minus_alpha);
         minus_alpha = -minus_alpha;
         
         // w = w - alpha * Q(:, m)
@@ -301,6 +303,7 @@ double compute_eigenpairs(
 
         // beta(m) = norm(w)
         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &minus_beta));
+        beta.push_back(minus_beta);
         minus_beta = -minus_beta;
 
         if (-minus_beta <= std::numeric_limits<double>::epsilon())
@@ -316,13 +319,11 @@ double compute_eigenpairs(
     double *T;
     CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
     std::vector<double> T_host(nb_iter * nb_iter, 0.0);
-    std::vector<double> alpha_host(nb_iter, 0.0);
     for (int i = 0; i < nb_iter; i++) {
-        alpha_host[i] = -minus_alpha; // store alpha values
-        T_host[i * nb_iter + i] = alpha_host[i]; // diagonal
+        T_host[i * nb_iter + i] = alpha[i]; // diagonal
         if (i < nb_iter - 1) {
-            T_host[i * nb_iter + (i + 1)] = minus_beta; // upper diagonal
-            T_host[(i + 1) * nb_iter + i] = minus_beta; // lower diagonal
+            T_host[i * nb_iter + (i + 1)] = beta[i]; // upper diagonal
+            T_host[(i + 1) * nb_iter + i] = beta[i]; // lower diagonal
         }
     }
     CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
@@ -361,7 +362,7 @@ double compute_eigenpairs(
     size_t sel_count = 0;
     bool accept;
 
-    for (int j = 0; j < nb_iter; j++) {
+    for (int j = nb_iter - 1; j >= 0; j--) {
         // Step 1 cleaning: residual filter
         double res_j;
         CHECK_CUDA(cudaMemcpy(&res_j, res_all + j, sizeof(double), D2H));
@@ -369,8 +370,8 @@ double compute_eigenpairs(
             // Step 2 cleaning: ghost orthogonality filter
             // x_candidate = Q(:,1:m) * Z(:,j)
             CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter,
-                                     &one, X_basis, n, T + j * nb_iter, 1,
-                                     &zero, x_candidate, 1));
+                                     &one, Q, n, T + j * nb_iter, 1,
+                                     &zero, x_candidate, 1));            
             if (sel_count == 0) {
                 accept = true;
             } else {
@@ -391,19 +392,19 @@ double compute_eigenpairs(
                         break;
                     }
                 }
+            }
 
-                if (accept) {
-                    // add the new eigenvector to the basis
-                    CHECK_CUBLAS(cublasDcopy(cublasH, n, x_candidate, 1, X_basis + sel_count * n, 1));
-                    // store the eigenvalue
-                    CHECK_CUDA(cudaMemcpy(sel + sel_count, d_eigenvalues + j, sizeof(double), cudaMemcpyDeviceToHost));
-                    
-                    sel_count++;
+            if (accept) {
+                // add the new eigenvector to the basis
+                CHECK_CUBLAS(cublasDcopy(cublasH, n, x_candidate, 1, X_basis + sel_count * n, 1));
+                // store the eigenvalue
+                CHECK_CUDA(cudaMemcpy(sel + sel_count, d_eigenvalues + j, sizeof(double), cudaMemcpyDeviceToHost));
+                
+                sel_count++;
 
-                    if (sel_count == k) {
-                        // if we have enough eigenpairs, stop
-                        break;
-                    }
+                if (sel_count == k) {
+                    // if we have enough eigenpairs, stop
+                    break;
                 }
             }
         }
@@ -427,6 +428,12 @@ double compute_eigenpairs(
     double norm_upper;
     CHECK_CUDA(cudaMemcpy(&norm_upper, res_all + idx_max, sizeof(double), D2H));
     norm_upper += fabs(theta);
+
+    /* Output */
+    // eigenvectors = X_basis
+    CHECK_CUBLAS(cublasDcopy(cublasH, sel_count * n, X_basis, 1, eigenvectors, 1));
+    // eigenvalues = sel
+    CHECK_CUDA(cudaMemcpy(eigenvalues, sel, sel_count * sizeof(double), D2D));
 
     return norm_upper;
 }

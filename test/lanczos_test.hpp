@@ -77,5 +77,8 @@ TEST(Lanczos, Eigenpairs)
     std::cout << "Actual two-norm: " << two_norm << std::endl;
     std::cout << "Upper bound: " << up << std::endl;
 
+    printMatrixDouble(eigenvalues, r, 1);
+    printMatrixDouble(eigenvectors, n, r);
+
     ASSERT_GE(up, two_norm);
 }
