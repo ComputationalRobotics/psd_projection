@@ -4,6 +4,7 @@
 #include <vector>
 #include <cassert>
 #include <cstdio>
+#include <limits>
 
 #include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
@@ -196,4 +197,236 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
+}
+
+__global__ void compute_res_all_kernel(const double* Z, double beta_m, double* res_all, int m) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < m) {
+        // Z[j*m] is the 1st row, j-th column (column-major)
+        res_all[j] = fabs(beta_m * Z[j * m]);
+    }
+}
+
+void compute_res_all(
+    const double* Z, size_t n, size_t m,
+    double beta_m, double* res_all
+) {
+    // Allocate device memory for res_all
+    CHECK_CUDA(cudaMemset(res_all, 0, m * sizeof(double)));
+
+    // Launch kernel to compute residuals for all Ritz pairs
+    int blockSize = 1024;
+    int numBlocks = (m + blockSize - 1) / blockSize;
+    compute_res_all_kernel<<<numBlocks, blockSize>>>(Z, beta_m, res_all, m);
+    
+    // Check for errors in kernel launch
+    CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+        vec[idx] = curand_uniform_double(&state); // random double in (0,1]
+    }
+}
+
+void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock) {
+    int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
+    fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+}
+
+double compute_eigenpairs(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
+    const double* A, size_t n,
+    const size_t k,
+    size_t *r,
+    double* eigenvalues, double* eigenvectors,
+    size_t max_iter, const double tol, const double ortho_tol
+) {
+    if (max_iter == 0)
+        max_iter = n;
+
+    /* Allocation */
+    double *v0, *Q, *w;
+    CHECK_CUDA(cudaMalloc(&v0,                     n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&Q,     n * (max_iter + 1) * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&w,                      n * sizeof(double)));
+
+    double zero = 0.0;
+    double one = 1.0;
+
+    double minus_beta = 0.0;
+    double minus_alpha;
+
+    /* Initialize */
+    // v0 = randn(n, 1)
+    fill_random(v0, n);
+    // v0 = v0 / norm(v0)
+    double norm_v0;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, n, v0, 1, &norm_v0));
+    if (norm_v0 != 0.0) {
+        double norm_v0_inv = 1.0 / norm_v0;
+        CHECK_CUBLAS(cublasDscal(cublasH, n, &norm_v0_inv, v0, 1));
+    }
+
+    // Q(:, 1) = v0
+    CHECK_CUBLAS(cublasDcopy(cublasH, n, v0, 1, Q, 1));
+
+    int nb_iter = 0;
+    /* Lanczos reccurence */
+    for (int m = 0; m < max_iter; m++) {
+        nb_iter++;
+        // w = A * Q(:, m)
+        CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
+                                 &one, A, n, Q + m * n, 1,
+                                 &zero, w, 1));
+        
+        // w = w - beta(m-1) * Q(:, m-1)
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_beta, Q + (m - 1) * n, 1, w, 1));
+
+        // alpha = Q(:, m)^T * w
+        CHECK_CUBLAS(cublasDdot(cublasH, n, Q + m * n, 1, w, 1, &minus_alpha));
+        minus_alpha = -minus_alpha;
+        
+        // w = w - alpha * Q(:, m)
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_alpha, Q + m * n, 1, w, 1));
+
+        // beta(m) = norm(w)
+        CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &minus_beta));
+        minus_beta = -minus_beta;
+
+        if (-minus_beta <= std::numeric_limits<double>::epsilon())
+            break;
+        
+        // Q(:, m+1) = w / beta(m)
+        double beta_inv = -1.0 / minus_beta;
+        CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, w, 1));
+        CHECK_CUBLAS(cublasDcopy(cublasH, n, w, 1, Q + (m + 1) * n, 1));
+    }
+
+    /* Tridiagonal T */
+    double *T;
+    CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
+    std::vector<double> T_host(nb_iter * nb_iter, 0.0);
+    std::vector<double> alpha_host(nb_iter, 0.0);
+    for (int i = 0; i < nb_iter; i++) {
+        alpha_host[i] = -minus_alpha; // store alpha values
+        T_host[i * nb_iter + i] = alpha_host[i]; // diagonal
+        if (i < nb_iter - 1) {
+            T_host[i * nb_iter + (i + 1)] = minus_beta; // upper diagonal
+            T_host[(i + 1) * nb_iter + i] = minus_beta; // lower diagonal
+        }
+    }
+    CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
+
+    /* Largest Ritz pair */
+    // allocate memory for eigenvalues
+    double *d_eigenvalues;
+    CHECK_CUDA(cudaMalloc(&d_eigenvalues, nb_iter * sizeof(double)));
+
+    // allocate workspace for eigenvalue decomposition
+    int lwork_eig, *devInfo;
+    double *d_work_eig;
+    CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+                                               nb_iter, T, nb_iter, d_eigenvalues, &lwork_eig));
+    CHECK_CUDA(cudaMalloc(&d_work_eig, lwork_eig * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+
+    // compute eigenvalues and eigenvectors
+    CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
+                                    nb_iter, T, nb_iter, d_eigenvalues,
+                                    d_work_eig, lwork_eig, devInfo));
+    // note that the eigenvalues are sorted in ascending order
+
+    // compute the residuals for all Ritz pairs
+    double *res_all;
+    CHECK_CUDA(cudaMalloc(&res_all, nb_iter * sizeof(double)));
+    double beta_m = minus_beta; // last beta value
+    compute_res_all(T, nb_iter, nb_iter, beta_m, res_all);
+
+    /* Choose the first k */
+    double *x_candidate, *overlap, *X_basis, *sel;
+    CHECK_CUDA(cudaMalloc(&x_candidate, n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&overlap,     k * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&X_basis, k * n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&sel,         k * sizeof(double)));
+    size_t sel_count = 0;
+    bool accept;
+
+    for (int j = 0; j < nb_iter; j++) {
+        // Step 1 cleaning: residual filter
+        double res_j;
+        CHECK_CUDA(cudaMemcpy(&res_j, res_all + j, sizeof(double), D2H));
+        if (res_j < ortho_tol) {
+            // Step 2 cleaning: ghost orthogonality filter
+            // x_candidate = Q(:,1:m) * Z(:,j)
+            CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter,
+                                     &one, X_basis, n, T + j * nb_iter, 1,
+                                     &zero, x_candidate, 1));
+            if (sel_count == 0) {
+                accept = true;
+            } else {
+                // overlap = X_basis' * x_candidate
+                CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, sel_count,
+                                         &one, X_basis, n, x_candidate, 1,
+                                         &zero, overlap, 1));
+
+                // get overlap back to host
+                std::vector<double> overlap_host(sel_count);
+                CHECK_CUDA(cudaMemcpy(overlap_host.data(), overlap, sel_count * sizeof(double), cudaMemcpyDeviceToHost));
+
+                // check if overlap is below the tolerance
+                accept = true;
+                for (size_t i = 0; i < sel_count; i++) {
+                    if (abs(overlap_host[i]) > ortho_tol) {
+                        accept = false;
+                        break;
+                    }
+                }
+
+                if (accept) {
+                    // add the new eigenvector to the basis
+                    CHECK_CUBLAS(cublasDcopy(cublasH, n, x_candidate, 1, X_basis + sel_count * n, 1));
+                    // store the eigenvalue
+                    CHECK_CUDA(cudaMemcpy(sel + sel_count, d_eigenvalues + j, sizeof(double), cudaMemcpyDeviceToHost));
+                    
+                    sel_count++;
+
+                    if (sel_count == k) {
+                        // if we have enough eigenpairs, stop
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    if (sel_count < k) {
+        fprintf(stderr, "Warning: only %zu eigenpairs found, requested %zu.\n", sel_count, k);
+    }
+    *r = sel_count;
+
+    /* Spectral norm upper bound */
+    // retrieve the max eigenvalue and corresponding eigenvector
+    int idx_max;
+    CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
+    idx_max--; // convert to 0-based index
+
+    double theta;
+    CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
+    // TODO: check if idx_max is always 0, if so we can skip this step
+
+    double norm_upper;
+    CHECK_CUDA(cudaMemcpy(&norm_upper, res_all + idx_max, sizeof(double), D2H));
+    norm_upper += fabs(theta);
+
+    return norm_upper;
 }
