@@ -102,7 +102,7 @@ void express_FP32(
 
     /* Compute A = (I + A)/2 */
     // build I on device and store it in A2
-    build_identity(cublasH, A2, n);
+    build_identity(cublasH, A2, n, 1024);
 
     // A = 1 * I + A
     CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A2, 1, A, 1) );
@@ -156,4 +156,70 @@ void express_FP32_auto_scale(
 
     // rescale the result back to the original scale
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat + mat_offset, 1) );
+}
+
+void express_FP32_auto_scale_deflate(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t solverH,
+    double* mat,
+    const int n,
+    const int mat_offset,
+    const size_t k,
+    const double tol,
+    const double ortho_tol
+) {
+    size_t nn = n * n;
+    
+    /* Step 1: compute the largest eigenpairs of the matrix */
+    size_t r;
+    double *eigenvalues, *eigenvectors;
+    CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
+
+    double _ = compute_eigenpairs(
+        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, 0, tol, ortho_tol
+    );
+
+    std::vector<double> eigenvalues_host(r);
+    CHECK_CUDA( cudaMemcpy(eigenvalues_host.data(), eigenvalues, r * sizeof(double), D2H) );
+
+    /* Step 2: remove the largest eigenvalues from the matrix */
+    for (int i = 0; i < r; i++) {
+        // X <- X - \lambda_i * v_i v_i^T
+        double lambda = -eigenvalues_host[i];
+        double *v_i = eigenvectors + i * n;
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat + mat_offset, n) );
+    }
+
+    /* Step 3: scale the deflated matrix */
+    // size_t r2;
+    // double up = compute_eigenpairs(
+    //     cublasH, solverH, mat + mat_offset, n, 0, &r2, eigenvalues, eigenvectors, 0, tol, ortho_tol
+    // );
+    double up, lo;
+    approximate_two_norm(
+        cublasH, solverH, mat + mat_offset, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
+
+    /* Step 4: project the matrix using the express_FP32 function */
+    express_FP32(
+        cublasH, mat + mat_offset, n, 0
+    );
+
+    /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat + mat_offset, 1) );
+
+    for (int i = 0; i < r; i++) {
+        // X <- X + \lambda_i * v_i v_i^T
+        double lambda = eigenvalues_host[i];
+        if (lambda > 0.0) { // only add positive eigenvalues
+            double *v_i = eigenvectors + i * n;
+            CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat + mat_offset, n) );
+        }
+    }
 }
