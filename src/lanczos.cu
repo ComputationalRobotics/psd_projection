@@ -239,6 +239,30 @@ void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlo
     }
 }
 
+__global__ void fill_tridiagonal_kernel(double* T, const double* alpha, const double* beta, int nb_iter) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < nb_iter) {
+        // Set diagonal
+        T[i * nb_iter + i] = alpha[i];
+        // Set upper diagonal
+        if (i < nb_iter - 1) {
+            T[i * nb_iter + (i + 1)] = beta[i];
+            T[(i + 1) * nb_iter + i] = beta[i];
+        }
+    }
+}
+
+void fill_tridiagonal(
+    double* T, const double *d_alpha, const double *d_beta, int nb_iter, const int threadsPerBlock = 1024
+) {
+    // Launch kernel to fill the tridiagonal matrix T
+    int blocks = (nb_iter + threadsPerBlock - 1) / threadsPerBlock;
+    fill_tridiagonal_kernel<<<blocks, threadsPerBlock>>>(T, d_alpha, d_beta, nb_iter);
+    
+    // Check for errors in kernel launch
+    CHECK_CUDA(cudaGetLastError());
+}
+
 double compute_eigenpairs(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
@@ -246,6 +270,7 @@ double compute_eigenpairs(
     const size_t k,
     size_t *r,
     double* eigenvalues, double* eigenvectors,
+    const bool upper_bound_only,
     size_t max_iter, const double tol, const double ortho_tol
 ) {
     if (max_iter == 0)
@@ -313,17 +338,15 @@ double compute_eigenpairs(
     }
 
     /* Tridiagonal T */
-    double *T;
-    CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
-    std::vector<double> T_host(nb_iter * nb_iter, 0.0);
-    for (int i = 0; i < nb_iter; i++) {
-        T_host[i * nb_iter + i] = alpha[i]; // diagonal
-        if (i < nb_iter - 1) {
-            T_host[i * nb_iter + (i + 1)] = beta[i]; // upper diagonal
-            T_host[(i + 1) * nb_iter + i] = beta[i]; // lower diagonal
-        }
-    }
-    CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
+    double *T, *d_alpha, *d_beta;
+    CHECK_CUDA(cudaMalloc(&T,       nb_iter * nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_alpha,           nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), nb_iter * sizeof(double), H2D));
+    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
+    fill_tridiagonal(
+        T, d_alpha, d_beta, nb_iter
+    );
 
     /* Largest Ritz pair */
     // allocate memory for eigenvalues
@@ -361,70 +384,72 @@ double compute_eigenpairs(
         return std::abs(eigenvalues_host[i1]) > std::abs(eigenvalues_host[i2]);
     });
 
-    /* Choose the first k */
-    double *x_candidate, *overlap, *X_basis, *sel;
-    CHECK_CUDA(cudaMalloc(&x_candidate, n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&overlap,     k * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&X_basis, k * n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&sel,         k * sizeof(double)));
     size_t sel_count = 0;
-    bool accept;
-    int j;
+    double *x_candidate, *overlap, *X_basis, *sel;
+    if (!upper_bound_only) {
+        /* Choose the first k */
+        CHECK_CUDA(cudaMalloc(&x_candidate, n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&overlap,     k * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&X_basis, k * n * sizeof(double)));
+        CHECK_CUDA(cudaMalloc(&sel,         k * sizeof(double)));
+        bool accept;
+        int j;
 
-    for (int id = 0; id < nb_iter; id++) {
-        j = idx[id]; // get the index of the j-th Ritz pair
+        for (int id = 0; id < nb_iter; id++) {
+            j = idx[id]; // get the index of the j-th Ritz pair
 
-        // Step 1 cleaning: residual filter
-        double res_j;
-        CHECK_CUDA(cudaMemcpy(&res_j, res_all + j, sizeof(double), D2H));
-        if (res_j < ortho_tol) {
-            // Step 2 cleaning: ghost orthogonality filter
-            // x_candidate = Q(:,1:m) * Z(:,j)
-            CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter,
-                                     &one, Q, n, T + j * nb_iter, 1,
-                                     &zero, x_candidate, 1));            
-            if (sel_count == 0) {
-                accept = true;
-            } else {
-                // overlap = X_basis' * x_candidate
-                CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, sel_count,
-                                         &one, X_basis, n, x_candidate, 1,
-                                         &zero, overlap, 1));
+            // Step 1 cleaning: residual filter
+            double res_j;
+            CHECK_CUDA(cudaMemcpy(&res_j, res_all + j, sizeof(double), D2H));
+            if (res_j < ortho_tol) {
+                // Step 2 cleaning: ghost orthogonality filter
+                // x_candidate = Q(:,1:m) * Z(:,j)
+                CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, nb_iter,
+                                        &one, Q, n, T + j * nb_iter, 1,
+                                        &zero, x_candidate, 1));            
+                if (sel_count == 0) {
+                    accept = true;
+                } else {
+                    // overlap = X_basis' * x_candidate
+                    CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, sel_count,
+                                            &one, X_basis, n, x_candidate, 1,
+                                            &zero, overlap, 1));
 
-                // get overlap back to host
-                std::vector<double> overlap_host(sel_count);
-                CHECK_CUDA(cudaMemcpy(overlap_host.data(), overlap, sel_count * sizeof(double), cudaMemcpyDeviceToHost));
+                    // get overlap back to host
+                    std::vector<double> overlap_host(sel_count);
+                    CHECK_CUDA(cudaMemcpy(overlap_host.data(), overlap, sel_count * sizeof(double), cudaMemcpyDeviceToHost));
 
-                // check if overlap is below the tolerance
-                accept = true;
-                for (size_t i = 0; i < sel_count; i++) {
-                    if (abs(overlap_host[i]) > ortho_tol) {
-                        accept = false;
+                    // check if overlap is below the tolerance
+                    accept = true;
+                    for (size_t i = 0; i < sel_count; i++) {
+                        if (abs(overlap_host[i]) > ortho_tol) {
+                            accept = false;
+                            break;
+                        }
+                    }
+                }
+
+                if (accept) {
+                    // add the new eigenvector to the basis
+                    CHECK_CUBLAS(cublasDcopy(cublasH, n, x_candidate, 1, X_basis + sel_count * n, 1));
+                    // store the eigenvalue
+                    CHECK_CUDA(cudaMemcpy(sel + sel_count, d_eigenvalues + j, sizeof(double), cudaMemcpyDeviceToHost));
+                    
+                    sel_count++;
+
+                    if (sel_count == k) {
+                        // if we have enough eigenpairs, stop
                         break;
                     }
                 }
             }
-
-            if (accept) {
-                // add the new eigenvector to the basis
-                CHECK_CUBLAS(cublasDcopy(cublasH, n, x_candidate, 1, X_basis + sel_count * n, 1));
-                // store the eigenvalue
-                CHECK_CUDA(cudaMemcpy(sel + sel_count, d_eigenvalues + j, sizeof(double), cudaMemcpyDeviceToHost));
-                
-                sel_count++;
-
-                if (sel_count == k) {
-                    // if we have enough eigenpairs, stop
-                    break;
-                }
-            }
         }
-    }
 
-    if (sel_count < k) {
-        fprintf(stderr, "Warning: only %zu eigenpairs found, requested %zu.\n", sel_count, k);
+        if (sel_count < k) {
+            fprintf(stderr, "Warning: only %zu eigenpairs found, requested %zu.\n", sel_count, k);
+        }
+        *r = sel_count;
     }
-    *r = sel_count;
 
     /* Spectral norm upper bound */
     // retrieve the max eigenvalue and corresponding eigenvector
@@ -438,10 +463,12 @@ double compute_eigenpairs(
     norm_upper += fabs(theta);
 
     /* Output */
-    // eigenvectors = X_basis
-    CHECK_CUBLAS(cublasDcopy(cublasH, sel_count * n, X_basis, 1, eigenvectors, 1));
-    // eigenvalues = sel
-    CHECK_CUDA(cudaMemcpy(eigenvalues, sel, sel_count * sizeof(double), D2D));
+    if (!upper_bound_only) {
+        // eigenvectors = X_basis
+        CHECK_CUBLAS(cublasDcopy(cublasH, sel_count * n, X_basis, 1, eigenvectors, 1));
+        // eigenvalues = sel
+        CHECK_CUDA(cudaMemcpy(eigenvalues, sel, sel_count * sizeof(double), D2D));
+    }
 
     return norm_upper;
 }

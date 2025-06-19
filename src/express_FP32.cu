@@ -177,7 +177,7 @@ void express_FP32_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     double _ = compute_eigenpairs(
-        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, 0, tol, ortho_tol
+        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol
     );
 
     std::vector<double> eigenvalues_host(r);
@@ -192,13 +192,8 @@ void express_FP32_auto_scale_deflate(
     }
 
     /* Step 3: scale the deflated matrix */
-    // size_t r2;
-    // double up = compute_eigenpairs(
-    //     cublasH, solverH, mat + mat_offset, n, 0, &r2, eigenvalues, eigenvectors, 0, tol, ortho_tol
-    // );
-    double up, lo;
-    approximate_two_norm(
-        cublasH, solverH, mat + mat_offset, n, &lo, &up
+    double up = compute_eigenpairs(
+        cublasH, solverH, mat + mat_offset, n, 0, nullptr, nullptr, nullptr, true, 10
     );
 
     // scale to have eigenvalues in [-1, 1]

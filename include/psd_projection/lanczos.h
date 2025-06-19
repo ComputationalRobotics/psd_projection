@@ -27,6 +27,7 @@ void approximate_two_norm(
 /// @param r actual number of eigenpairs computed (output parameter, r <= k)
 /// @param eigenvalues rx1 vector of Ritz values after cleaning
 /// @param eigenvectors rxn matrix of Ritz vectors after cleaning
+/// @param upper_bound_only if true, only computes an upper bound on the spectral norm (default false)
 /// @param max_iter maximum number of Lanczos iterations (default n)
 /// @param tol residual tolerance for step-1 cleaning (default 1e-10)
 /// @param ortho_tol orthogonality tolerance for step-2 cleaning (default 1e-3)
@@ -38,6 +39,7 @@ double compute_eigenpairs(
     const size_t k,
     size_t *r,
     double* eigenvalues, double* eigenvectors,
+    const bool upper_bound_only = false,
     const size_t max_iter = 0, const double tol = 1e-10, const double ortho_tol = 1e-5
 );
 
