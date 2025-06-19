@@ -5,6 +5,7 @@
 #include <cassert>
 #include <cstdio>
 #include <limits>
+#include <algorithm>
 
 #include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
@@ -26,7 +27,7 @@ void approximate_two_norm(
     double *V, *V_old, *alpha, *q, *w;
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
 
@@ -36,11 +37,7 @@ void approximate_two_norm(
 
     /* Initial vector */
     // q = randn(n, 1)
-    std::vector<double> q_host(n);
-    for (size_t i = 0; i < n; ++i) {
-        q_host[i] = 2.0 * (static_cast<double>(rand()) / RAND_MAX) - 1.0; // Random values in [-1, 1)
-    }
-    CHECK_CUDA(cudaMemcpy(q, q_host.data(), n * sizeof(double), cudaMemcpyHostToDevice));
+    fill_random(q, n, 0);
 
     // q = q / norm(q)
     double norm_q;
@@ -353,6 +350,17 @@ double compute_eigenpairs(
     double beta_m = minus_beta; // last beta value
     compute_res_all(T, nb_iter, nb_iter, beta_m, res_all);
 
+    /* Compute the decreasing absolute value order */
+    std::vector<int> idx(nb_iter);
+    for (int i = 0; i < nb_iter; i++) {
+        idx[i] = i;
+    }
+    std::vector<double> eigenvalues_host(nb_iter);
+    CHECK_CUDA(cudaMemcpy(eigenvalues_host.data(), d_eigenvalues, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
+    std::sort(idx.begin(), idx.end(), [&](size_t i1, size_t i2) {
+        return std::abs(eigenvalues_host[i1]) > std::abs(eigenvalues_host[i2]);
+    });
+
     /* Choose the first k */
     double *x_candidate, *overlap, *X_basis, *sel;
     CHECK_CUDA(cudaMalloc(&x_candidate, n * sizeof(double)));
@@ -361,8 +369,11 @@ double compute_eigenpairs(
     CHECK_CUDA(cudaMalloc(&sel,         k * sizeof(double)));
     size_t sel_count = 0;
     bool accept;
+    int j;
 
-    for (int j = nb_iter - 1; j >= 0; j--) {
+    for (int id = 0; id < nb_iter; id++) {
+        j = idx[id]; // get the index of the j-th Ritz pair
+
         // Step 1 cleaning: residual filter
         double res_j;
         CHECK_CUDA(cudaMemcpy(&res_j, res_all + j, sizeof(double), D2H));
@@ -417,9 +428,7 @@ double compute_eigenpairs(
 
     /* Spectral norm upper bound */
     // retrieve the max eigenvalue and corresponding eigenvector
-    int idx_max;
-    CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
-    idx_max--; // convert to 0-based index
+    int idx_max = idx[0];
 
     double theta;
     CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
