@@ -432,7 +432,6 @@ double compute_eigenpairs(
 
     double theta;
     CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
-    // TODO: check if idx_max is always 0, if so we can skip this step
 
     double norm_upper;
     CHECK_CUDA(cudaMemcpy(&norm_upper, res_all + idx_max, sizeof(double), D2H));

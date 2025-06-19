@@ -305,7 +305,7 @@ TEST(ExpressFP32, UniformAutoScaleDeflate1024)
     // we generate a random matrix with values in [-10/n, 10/n]
     generateAndProject(n, dA, dA_psd, solverH, cublasH, 10.0); // cuSOLVER
 
-    express_FP32_auto_scale_deflate(cublasH, solverH, dA, n, 0, 40);
+    express_FP32_auto_scale_deflate(cublasH, solverH, dA, n, 0, 40, 1e-10, 1e-5);
 
     // check if dA and dA_psd are approximately equal
     double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
