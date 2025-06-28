@@ -100,8 +100,18 @@ void build_identity(
     float* mat,
     int n,
     const int threadsPerBlock = 1024
+); // TODO: remove this function to avoid using it anywhere
+
+__global__ void add_identity_kernel(float* mat, int n);
+
+/// @brief Add the identity matrix of size n x n to a matrix in device memory (single precision).
+/// @param cublasH cuBLAS handle
+/// @param mat matrix to which the identity matrix will be added, stored in column-major order
+/// @param n size of mat
+void add_identity(
+    cublasHandle_t cublasH,
+    float* mat,
+    int n
 );
-
-
 
 #endif // PSD_PROJECTION_UTILS_H

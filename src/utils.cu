@@ -76,3 +76,27 @@ void build_identity(
     CHECK_CUDA(cudaGetLastError());
     CHECK_CUDA(cudaDeviceSynchronize());
 }
+
+__global__ void add_identity_kernel(float* mat, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        int row = idx / n;
+        int col = idx % n;
+        if (row == col) {
+            mat[idx] += 1.0f; // Add 1 to the diagonal elements
+        }
+    }
+}
+
+void add_identity(
+    cublasHandle_t cublasH,
+    float* mat,
+    int n
+) {
+    const int threadsPerBlock = 1024;
+    const int blocksPerGrid = (n * n + threadsPerBlock - 1) / threadsPerBlock;
+
+    // Launch kernel to add identity matrix
+    add_identity_kernel<<<blocksPerGrid, threadsPerBlock>>>(mat, n);
+    CHECK_CUDA(cudaGetLastError());
+}
