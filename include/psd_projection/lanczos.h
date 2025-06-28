@@ -40,7 +40,8 @@ double compute_eigenpairs(
     size_t *r,
     double* eigenvalues, double* eigenvectors,
     const bool upper_bound_only = false,
-    const size_t max_iter = 0, const double tol = 1e-10, const double ortho_tol = 1e-5
+    const size_t max_iter = 0, const double tol = 1e-10, const double ortho_tol = 1e-5,
+    const bool verbose = false
 );
 
 __global__ void fill_random_kernel(double* vec, int n, unsigned long seed);

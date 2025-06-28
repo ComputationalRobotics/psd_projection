@@ -12,7 +12,8 @@ void express_FP32(
     cublasHandle_t cublasH,
     double* mat,
     const int mat_size,
-    const int mat_offset = 0
+    const int mat_offset = 0,
+    const bool verbose = false
 );
 
 /// @brief Projects a symmetric matrix to its positive semidefinite (PSD) form using FP32 precision. The matrix is automatically scaled to ensure its eigenvalues are in [-1, 1].
@@ -41,7 +42,8 @@ void express_FP32_auto_scale_deflate(
     const int mat_offset = 0,
     const size_t k = 40,
     const double tol = 1e-10,
-    const double ortho_tol = 1e-3
+    const double ortho_tol = 1e-3,
+    const bool verbose = false
 );
 
 #endif // PSD_PROJECTION_EXPRESS_FP32_H
