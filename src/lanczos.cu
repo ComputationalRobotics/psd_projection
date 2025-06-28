@@ -25,6 +25,7 @@ void approximate_two_norm(
     
     // storage
     double *V, *V_old, *alpha, *q, *w;
+    max_iter = min(max_iter, n);
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
@@ -33,7 +34,7 @@ void approximate_two_norm(
 
     std::vector<double> beta(max_iter, 0.0);
 
-    double minus_alpha, minus_beta_old;
+    double minus_alpha, minus_beta_old = 0.0;
 
     /* Initial vector */
     // q = randn(n, 1)
@@ -91,7 +92,7 @@ void approximate_two_norm(
             CHECK_CUBLAS(cublasDscal(cublasH, n, &beta_inv, q, 1));
         } else {
             // If beta is zero, we cannot proceed further
-            fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
+            // fprintf(stderr, "Lanczos iteration %d: beta is zero, stopping early.\n", k);
             break;
         }
 
@@ -103,6 +104,21 @@ void approximate_two_norm(
         minus_beta_old = -beta[k];
 
         nb_iter++;
+    }
+
+    if (nb_iter == 0) {
+        // in this case, the matrix is an all-zero matrix
+        *lo = 0.0;
+        *up = 1.0;
+
+        CHECK_CUDA(cudaFree(V));
+        CHECK_CUDA(cudaFree(V_old));
+        CHECK_CUDA(cudaFree(alpha));
+        CHECK_CUDA(cudaFree(q));
+        CHECK_CUDA(cudaFree(w));
+        CHECK_CUDA(cudaDeviceSynchronize());
+
+        return;
     }
 
     /* Tridiagonal T */
@@ -194,6 +210,8 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
+
+    return;
 }
 
 __global__ void compute_res_all_kernel(const double* Z, double beta_m, double* res_all, int m) {
@@ -271,7 +289,8 @@ double compute_eigenpairs(
     size_t *r,
     double* eigenvalues, double* eigenvectors,
     const bool upper_bound_only,
-    size_t max_iter, const double tol, const double ortho_tol
+    size_t max_iter, const double tol, const double ortho_tol,
+    const bool verbose
 ) {
     if (max_iter == 0)
         max_iter = n;
@@ -445,7 +464,7 @@ double compute_eigenpairs(
             }
         }
 
-        if (sel_count < k) {
+        if (sel_count < k && verbose) {
             fprintf(stderr, "Warning: only %zu eigenpairs found, requested %zu.\n", sel_count, k);
         }
         *r = sel_count;
@@ -468,7 +487,26 @@ double compute_eigenpairs(
         CHECK_CUBLAS(cublasDcopy(cublasH, sel_count * n, X_basis, 1, eigenvectors, 1));
         // eigenvalues = sel
         CHECK_CUDA(cudaMemcpy(eigenvalues, sel, sel_count * sizeof(double), D2D));
+
+        CHECK_CUDA(cudaFree(x_candidate));
+        CHECK_CUDA(cudaFree(overlap));
+        CHECK_CUDA(cudaFree(X_basis));
+        CHECK_CUDA(cudaFree(sel));
     }
 
-    return norm_upper;
+    /* Free memory */
+    CHECK_CUDA(cudaFree(v0));
+    CHECK_CUDA(cudaFree(Q));
+    CHECK_CUDA(cudaFree(w));
+    CHECK_CUDA(cudaFree(T));
+    CHECK_CUDA(cudaFree(d_alpha));
+    CHECK_CUDA(cudaFree(d_beta));
+    CHECK_CUDA(cudaFree(d_eigenvalues));
+    CHECK_CUDA(cudaFree(d_work_eig));
+    CHECK_CUDA(cudaFree(devInfo));
+    CHECK_CUDA(cudaFree(res_all));
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return norm_upper + 1e-3;
 }

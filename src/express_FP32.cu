@@ -16,7 +16,8 @@ void express_FP32(
     cublasHandle_t cublasH,
     double* mat,
     const int n,
-    const int mat_offset
+    const int mat_offset,
+    const bool verbose
 ) {
     const int nn = n * n;
 
@@ -166,7 +167,8 @@ void express_FP32_auto_scale_deflate(
     const int mat_offset,
     const size_t k,
     const double tol,
-    const double ortho_tol
+    const double ortho_tol,
+    const bool verbose
 ) {
     size_t nn = n * n;
     
@@ -177,7 +179,7 @@ void express_FP32_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     double _ = compute_eigenpairs(
-        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol
+        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol, verbose
     );
 
     std::vector<double> eigenvalues_host(r);
@@ -193,17 +195,17 @@ void express_FP32_auto_scale_deflate(
 
     /* Step 3: scale the deflated matrix */
     double up = compute_eigenpairs(
-        cublasH, solverH, mat + mat_offset, n, 0, nullptr, nullptr, nullptr, true, 10
+        cublasH, solverH, mat + mat_offset, n, 0, nullptr, nullptr, nullptr, true, 100, 1e-10, 1e-5, verbose
     );
 
     // scale to have eigenvalues in [-1, 1]
-    const double scale = up > 0.0 ? up : 1.0;
+    const double scale = up > 0.0 ? 1.1 * up + 1e-5 : 1.0;
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
 
     /* Step 4: project the matrix using the express_FP32 function */
     express_FP32(
-        cublasH, mat + mat_offset, n, 0
+        cublasH, mat + mat_offset, n, 0, verbose
     );
 
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
@@ -217,4 +219,8 @@ void express_FP32_auto_scale_deflate(
             CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat + mat_offset, n) );
         }
     }
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(eigenvalues) );
+    CHECK_CUDA( cudaFree(eigenvectors) );
 }
