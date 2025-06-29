@@ -188,5 +188,16 @@ void haoyu_TF16(
     CHECK_CUDA(cudaMemcpy(mat, dTmp, nn*sizeof(float), D2D));
     CHECK_CUBLAS(cublasSscal(cublasH, nn, &half, mat, 1));
 
+    /* Free memory */
+    CHECK_CUDA(cudaFree(dA_our));
+    CHECK_CUDA(cudaFree(dTmp));
+    CHECK_CUDA(cudaFree(dI));
+    CHECK_CUDA(cudaFree(dT1));
+    CHECK_CUDA(cudaFree(dT2));
+    CHECK_CUDA(cudaFree(dF));
+    CHECK_CUDA(cudaFree(dDiff));
+    CHECK_CUDA(cudaFree(dT3_half));
+    CHECK_CUDA(cudaFree(dT4_half));
+
     return;
 }

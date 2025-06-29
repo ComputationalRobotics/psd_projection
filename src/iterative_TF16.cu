@@ -269,4 +269,6 @@ void projection_TF16(
     cudaFree(dT1);
     cudaFree(dT2);
     cudaFree(dF);
+    cudaFree(dT3_half);
+    cudaFree(dT4_half);
 }
