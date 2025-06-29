@@ -12,41 +12,6 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-// // Helper kernel: convert float array -> half array
-// __global__ void float2half_kernel(const float* A, __half* B, size_t N) {
-//     size_t i = blockIdx.x*blockDim.x + threadIdx.x;
-//     if(i < N) B[i] = __float2half_rn(A[i]);
-// }
-
-// // Kernel: each thread handles 4 floats at once, writing 4 halves
-// __global__ void float4_to_half_kernel(
-//     const float4* __restrict__ A4,
-//     __half2 * __restrict__ B2,
-//     size_t N4
-// ) {
-//     size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-//     if (idx >= N4) return;
-
-//     // load 4 floats
-//     float4 v = A4[idx];
-
-//     // pack low two floats into half2
-//     B2[2*idx + 0] = __float22half2_rn(make_float2(v.x, v.y));
-//     // pack high two floats into half2
-//     B2[2*idx + 1] = __float22half2_rn(make_float2(v.z, v.w));
-// }
-
-// void convertFloatToHalf4(const float* dA, __half* dB, size_t N) {
-//     size_t N4 = (N + 3)/4;  // how many float4’s
-//     auto A4 = reinterpret_cast<const float4*>(dA);
-//     auto B2 = reinterpret_cast<__half2*>(dB);
-
-//     const int blk = 1024;
-//     int grid = (N4 + blk - 1)/blk;
-//     float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
-//     // cudaDeviceSynchronize();
-// }
-
 void projection_TF16(
     cublasHandle_t cublasH,
     double* mat,

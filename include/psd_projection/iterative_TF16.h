@@ -3,16 +3,6 @@
 
 #include <cublas_v2.h>
 
-// __global__ void float2half_kernel(const float* A, __half* B, size_t N);
-
-// __global__ void float4_to_half_kernel(
-//     const float4* __restrict__ A4,
-//     __half2 * __restrict__ B2,
-//     size_t N4
-// );
-
-// void convertFloatToHalf4(const float* dA, __half* dB, size_t N);
-
 void projection_TF16(
     cublasHandle_t cublasH,
     double* mat,

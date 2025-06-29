@@ -1,0 +1,192 @@
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <cusolverDn.h>
+#include <cuda_fp16.h>
+#include <cmath>
+
+#include "psd_projection/haoyu_TF16.h"
+#include "psd_projection/check.h"
+#include "psd_projection/utils.h"
+
+void haoyu_TF16(
+    cublasHandle_t cublasH,
+    float* mat,
+    const int n
+) {
+    const int nn = n * n;
+
+    // 3) Allocate device buffers
+    float *dA_our, *dTmp, *dI, *dT1, *dT2, *dF, *dDiff;
+    CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dI,      nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dDiff,   nn*sizeof(float)));    
+
+    // 4) Copy host to device
+    CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
+    // 5) Build identity I on device
+    std::vector<float> I_h(nn, 0.0f);
+    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
+    CHECK_CUDA(cudaMemcpy(dI, I_h.data(), nn*sizeof(float), cudaMemcpyHostToDevice));
+
+    // half buffers
+    __half *dT3_half, *dT4_half; 
+    CHECK_CUDA(cudaMalloc(&dT3_half, nn*sizeof(__half))); 
+    CHECK_CUDA(cudaMalloc(&dT4_half, nn*sizeof(__half)));
+
+    const float one = 1.0f, zero = 0.0f, neg1 = -1.0f;
+    float half = 0.5f;
+
+    // 6) Iterative algorithm in float, printing after each iter
+    for (int iter = 1; iter <= 7; iter++) {
+        // T1 = A_our * A_our
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        CHECK_CUBLAS(cublasGemmEx(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one,
+            dT3_half, CUDA_R_16F, n,
+            dT3_half, CUDA_R_16F, n,
+            &zero,
+            dT1,    CUDA_R_32F, n,
+            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // T2 = I - T1
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n,
+            &one,  dI,  n,
+            &neg1, dT1, n,
+            dT2,       n));
+        // T1 = T2 * T2
+        // float2half_kernel<<<blocks,threads>>>(dT2, dT3_half, nn);
+        convert_float_to_half4(dT2, dT3_half, nn);
+        CHECK_CUBLAS(cublasGemmEx(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one,
+            dT3_half, CUDA_R_16F, n,
+            dT3_half, CUDA_R_16F, n,
+            &zero,
+            dT1, CUDA_R_32F, n,
+            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // CHECK_CUDA(cudaDeviceSynchronize());
+        // printMatrixHalf(dT3_half, n);
+        // printMatrixFloat(dT1, n);
+
+        // F = I + log(iter+10)*T1
+        float logv = std::log(iter + 10.0f);
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n,
+            &one,  dI,  n,
+            &logv, dT1, n,
+            dF,      n));
+
+        // A_our = A_our * F (to dTmp, then copy back)
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
+        CHECK_CUBLAS(cublasGemmEx(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one,
+            dT3_half, CUDA_R_16F, n,
+            dT4_half, CUDA_R_16F, n,
+            &zero,
+            dTmp,   CUDA_R_32F, n,
+            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+        
+        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+        // T1 = A_our^2, T2 = I - T1
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        CHECK_CUBLAS(cublasGemmEx(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one,
+            dT3_half, CUDA_R_16F, n,
+            dT3_half, CUDA_R_16F, n,
+            &zero,
+            dT1,    CUDA_R_32F, n,
+            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n,
+            &one,  dI,  n,
+            &neg1, dT1, n,
+            dT2,       n));
+
+        // F = I + (1/sqrt(iter))*T2
+        float invs = 1.0f / std::sqrt((float)iter);
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n,
+            &one,  dI,  n,
+            &invs, dT2, n,
+            dF,      n));
+            
+        // A_our = A_our * F (to dTmp)
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
+        CHECK_CUBLAS(cublasGemmEx(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_N,
+            n, n, n,
+            &one,
+            dT3_half, CUDA_R_16F, n,
+            dT4_half, CUDA_R_16F, n,
+            &zero,
+            dTmp,   CUDA_R_32F, n,
+            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+
+        // A_our <-- Tmp
+        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+        // force symmetry: A_our <-- 0.5 * (A_our + Tmp')
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_T,
+            n, n,
+            &half, dA_our, n,
+            &half, dTmp, n,
+            dA_our, n));
+    }
+    // 7) Final combine: mat = mat * (A_our + I) / 2
+    CHECK_CUBLAS(cublasSgeam(
+        cublasH,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n,
+        &one, dA_our, n,
+        &one, dI,     n,
+        dF,            n));
+
+    convert_float_to_half4(mat, dT3_half, nn);
+    convert_float_to_half4(dF, dT4_half, nn);
+    CHECK_CUBLAS(cublasGemmEx(
+        cublasH,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n, n,
+        &one,
+        dT3_half, CUDA_R_16F, n,
+        dT4_half, CUDA_R_16F, n,
+        &zero,
+        dTmp,    CUDA_R_32F, n,
+        CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    CHECK_CUDA(cudaMemcpy(mat, dTmp, nn*sizeof(float), D2D));
+    CHECK_CUBLAS(cublasSscal(cublasH, nn, &half, mat, 1));
+
+    return;
+}
