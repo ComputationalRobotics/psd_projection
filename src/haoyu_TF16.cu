@@ -8,6 +8,61 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
+// Kernel to replace A by I - A
+__global__ void identity_minus_kernel(const float* A_in, float* A_out, const int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        int row = idx / n;
+        int col = idx % n;
+        if (row == col) {
+            A_out[idx] = 1.0f - A_in[idx]; // diagonal elements
+        } else {
+            A_out[idx] = -A_in[idx]; // off-diagonal elements
+        }
+    }
+}
+
+void identity_minus(
+    const float* A_in,
+    float* A_out,
+    const int n
+) {
+    const int nn = n * n;
+    const int threads = 1024;
+    const int blocks = (nn + threads - 1) / threads;
+
+    // Launch kernel to compute I - A
+    identity_minus_kernel<<<blocks, threads>>>(A_in, A_out, n);
+    CHECK_CUDA(cudaGetLastError());
+}
+
+// Kernel to replace A by I + A
+__global__ void identity_plus_kernel(const float* A_in, float* A_out, const int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        int row = idx / n;
+        int col = idx % n;
+        if (row == col)
+            A_out[idx] = 1.0f + A_in[idx]; // diagonal elements
+        else
+            A_out[idx] = A_in[idx]; // off-diagonal elements
+    }
+}
+
+void identity_plus(
+    const float* A_in, // device pointer to matrix A
+    float* A_out, // device pointer to matrix A
+    const int n
+) {
+    const int nn = n * n;
+    const int threads = 1024;
+    const int blocks = (nn + threads - 1) / threads;
+
+    // Launch kernel to compute I + A
+    identity_plus_kernel<<<blocks, threads>>>(A_in, A_out, n);
+    CHECK_CUDA(cudaGetLastError());
+}
+
 void haoyu_TF16(
     cublasHandle_t cublasH,
     float* mat,
@@ -16,10 +71,9 @@ void haoyu_TF16(
     const int nn = n * n;
 
     // 3) Allocate device buffers
-    float *dA_our, *dTmp, *dI, *dT1, *dT2, *dF, *dDiff;
+    float *dA_our, *dTmp, *dT1, *dT2, *dF, *dDiff;
     CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dI,      nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
@@ -27,17 +81,13 @@ void haoyu_TF16(
 
     // 4) Copy host to device
     CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
-    // 5) Build identity I on device
-    std::vector<float> I_h(nn, 0.0f);
-    for (int i = 0; i < n; i++) I_h[i*n + i] = 1.0f;
-    CHECK_CUDA(cudaMemcpy(dI, I_h.data(), nn*sizeof(float), cudaMemcpyHostToDevice));
 
     // half buffers
     __half *dT3_half, *dT4_half; 
     CHECK_CUDA(cudaMalloc(&dT3_half, nn*sizeof(__half))); 
     CHECK_CUDA(cudaMalloc(&dT4_half, nn*sizeof(__half)));
 
-    const float one = 1.0f, zero = 0.0f, neg1 = -1.0f;
+    const float one = 1.0f, zero = 0.0f;
     float half = 0.5f;
 
     // 6) Iterative algorithm in float, printing after each iter
@@ -56,15 +106,9 @@ void haoyu_TF16(
             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
         // T2 = I - T1
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &neg1, dT1, n,
-            dT2,       n));
+        identity_minus(dT1, dT2, n);
+
         // T1 = T2 * T2
-        // float2half_kernel<<<blocks,threads>>>(dT2, dT3_half, nn);
         convert_float_to_half4(dT2, dT3_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
             cublasH,
@@ -77,19 +121,10 @@ void haoyu_TF16(
             dT1, CUDA_R_32F, n,
             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
-        // CHECK_CUDA(cudaDeviceSynchronize());
-        // printMatrixHalf(dT3_half, n);
-        // printMatrixFloat(dT1, n);
-
         // F = I + log(iter+10)*T1
         float logv = std::log(iter + 10.0f);
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &logv, dT1, n,
-            dF,      n));
+        CHECK_CUBLAS(cublasSscal(cublasH, nn, &logv, dT1, 1));
+        identity_plus(dT1, dF, n);
 
         // A_our = A_our * F (to dTmp, then copy back)
         convert_float_to_half4(dA_our, dT3_half, nn);
@@ -120,23 +155,12 @@ void haoyu_TF16(
             dT1,    CUDA_R_32F, n,
             CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &neg1, dT1, n,
-            dT2,       n));
+        identity_minus(dT1, dT2, n);
 
         // F = I + (1/sqrt(iter))*T2
         float invs = 1.0f / std::sqrt((float)iter);
-        CHECK_CUBLAS(cublasSgeam(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n,
-            &one,  dI,  n,
-            &invs, dT2, n,
-            dF,      n));
+        CHECK_CUBLAS(cublasSscal(cublasH, nn, &invs, dT2, 1));
+        identity_plus(dT2, dF, n);
             
         // A_our = A_our * F (to dTmp)
         convert_float_to_half4(dA_our, dT3_half, nn);
@@ -164,14 +188,9 @@ void haoyu_TF16(
             &half, dTmp, n,
             dA_our, n));
     }
+    
     // 7) Final combine: mat = mat * (A_our + I) / 2
-    CHECK_CUBLAS(cublasSgeam(
-        cublasH,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        n, n,
-        &one, dA_our, n,
-        &one, dI,     n,
-        dF,            n));
+    identity_plus(dA_our, dF, n);
 
     convert_float_to_half4(mat, dT3_half, nn);
     convert_float_to_half4(dF, dT4_half, nn);
@@ -191,7 +210,6 @@ void haoyu_TF16(
     /* Free memory */
     CHECK_CUDA(cudaFree(dA_our));
     CHECK_CUDA(cudaFree(dTmp));
-    CHECK_CUDA(cudaFree(dI));
     CHECK_CUDA(cudaFree(dT1));
     CHECK_CUDA(cudaFree(dT2));
     CHECK_CUDA(cudaFree(dF));
