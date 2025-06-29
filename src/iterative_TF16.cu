@@ -12,40 +12,40 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-// Helper kernel: convert float array -> half array
-__global__ void float2half_kernel(const float* A, __half* B, size_t N) {
-    size_t i = blockIdx.x*blockDim.x + threadIdx.x;
-    if(i < N) B[i] = __float2half_rn(A[i]);
-}
+// // Helper kernel: convert float array -> half array
+// __global__ void float2half_kernel(const float* A, __half* B, size_t N) {
+//     size_t i = blockIdx.x*blockDim.x + threadIdx.x;
+//     if(i < N) B[i] = __float2half_rn(A[i]);
+// }
 
-// Kernel: each thread handles 4 floats at once, writing 4 halves
-__global__ void float4_to_half_kernel(
-    const float4* __restrict__ A4,
-    __half2 * __restrict__ B2,
-    size_t N4
-) {
-    size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
-    if (idx >= N4) return;
+// // Kernel: each thread handles 4 floats at once, writing 4 halves
+// __global__ void float4_to_half_kernel(
+//     const float4* __restrict__ A4,
+//     __half2 * __restrict__ B2,
+//     size_t N4
+// ) {
+//     size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
+//     if (idx >= N4) return;
 
-    // load 4 floats
-    float4 v = A4[idx];
+//     // load 4 floats
+//     float4 v = A4[idx];
 
-    // pack low two floats into half2
-    B2[2*idx + 0] = __float22half2_rn(make_float2(v.x, v.y));
-    // pack high two floats into half2
-    B2[2*idx + 1] = __float22half2_rn(make_float2(v.z, v.w));
-}
+//     // pack low two floats into half2
+//     B2[2*idx + 0] = __float22half2_rn(make_float2(v.x, v.y));
+//     // pack high two floats into half2
+//     B2[2*idx + 1] = __float22half2_rn(make_float2(v.z, v.w));
+// }
 
-void convertFloatToHalf4(const float* dA, __half* dB, size_t N) {
-    size_t N4 = (N + 3)/4;  // how many float4’s
-    auto A4 = reinterpret_cast<const float4*>(dA);
-    auto B2 = reinterpret_cast<__half2*>(dB);
+// void convertFloatToHalf4(const float* dA, __half* dB, size_t N) {
+//     size_t N4 = (N + 3)/4;  // how many float4’s
+//     auto A4 = reinterpret_cast<const float4*>(dA);
+//     auto B2 = reinterpret_cast<__half2*>(dB);
 
-    const int blk = 1024;
-    int grid = (N4 + blk - 1)/blk;
-    float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
-    // cudaDeviceSynchronize();
-}
+//     const int blk = 1024;
+//     int grid = (N4 + blk - 1)/blk;
+//     float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
+//     // cudaDeviceSynchronize();
+// }
 
 void projection_TF16(
     cublasHandle_t cublasH,
@@ -99,7 +99,7 @@ void projection_TF16(
     for (int iter = 1; iter <= n_iter; iter++) {
         // T1 = A_our * A_our
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
         CHECK_CUBLAS( cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -127,7 +127,7 @@ void projection_TF16(
 
         // T1 = T2 * T2
         // float2half_kernel<<<blocks,threads>>>(dT2, dT3_half, nn);
-        convertFloatToHalf4(dT2, dT3_half, nn);
+        convert_float_to_half4(dT2, dT3_half, nn);
         CHECK_CUBLAS( cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -159,8 +159,8 @@ void projection_TF16(
         // A_our = A_our * F (to dTmp, then copy back)
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
         // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dF, dT4_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
         CHECK_CUBLAS( cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -180,7 +180,7 @@ void projection_TF16(
         CHECK_CUDA( cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice) );
         // T1 = A_our^2, T2 = I - T1
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
         CHECK_CUBLAS( cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -216,8 +216,8 @@ void projection_TF16(
         // A_our = A_our * F (to dTmp)
         // float2half_kernel<<<blocks,threads>>>(dA_our, dT3_half, nn);
         // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-        convertFloatToHalf4(dA_our, dT3_half, nn);
-        convertFloatToHalf4(dF, dT4_half, nn);
+        convert_float_to_half4(dA_our, dT3_half, nn);
+        convert_float_to_half4(dF, dT4_half, nn);
         CHECK_CUBLAS( cublasGemmEx(
             cublasH,
             CUBLAS_OP_N, CUBLAS_OP_N,
@@ -264,8 +264,8 @@ void projection_TF16(
 
     // float2half_kernel<<<blocks,threads>>>(dA_orig, dT3_half, nn);
     // float2half_kernel<<<blocks,threads>>>(dF, dT4_half, nn);
-    convertFloatToHalf4(dA_orig, dT3_half, nn);
-    convertFloatToHalf4(dF, dT4_half, nn);
+    convert_float_to_half4(dA_orig, dT3_half, nn);
+    convert_float_to_half4(dF, dT4_half, nn);
     CHECK_CUBLAS( cublasGemmEx(
         cublasH,
         CUBLAS_OP_N, CUBLAS_OP_N,

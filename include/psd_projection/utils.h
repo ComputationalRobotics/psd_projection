@@ -114,4 +114,16 @@ void add_identity(
     int n
 );
 
+__global__ void float4_to_half_kernel(
+    const float4* __restrict__ A4,
+    __half2 * __restrict__ B2,
+    size_t N4
+);
+
+/// @brief Convert an array of floats to half-precision (4 floats packed into 2 half2) in device memory.
+/// @param dA the input array of floats in device memory
+/// @param dB the output array of half-precision numbers in device memory
+/// @param N the size of the input array (number of floats)
+void convert_float_to_half4(const float* dA, __half* dB, size_t N);
+
 #endif // PSD_PROJECTION_UTILS_H

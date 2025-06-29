@@ -100,3 +100,30 @@ void add_identity(
     add_identity_kernel<<<blocksPerGrid, threadsPerBlock>>>(mat, n);
     CHECK_CUDA(cudaGetLastError());
 }
+
+__global__ void float4_to_half_kernel(
+    const float4* __restrict__ A4,
+    __half2 * __restrict__ B2,
+    size_t N4
+) {
+    size_t idx = blockIdx.x*blockDim.x + threadIdx.x;
+    if (idx >= N4) return;
+
+    // load 4 floats
+    float4 v = A4[idx];
+
+    // pack low two floats into half2
+    B2[2*idx + 0] = __float22half2_rn(make_float2(v.x, v.y));
+    // pack high two floats into half2
+    B2[2*idx + 1] = __float22half2_rn(make_float2(v.z, v.w));
+}
+
+void convert_float_to_half4(const float* dA, __half* dB, size_t N) {
+    size_t N4 = (N + 3)/4;  // how many float4’s
+    auto A4 = reinterpret_cast<const float4*>(dA);
+    auto B2 = reinterpret_cast<__half2*>(dB);
+
+    const int blk = 1024;
+    int grid = (N4 + blk - 1)/blk;
+    float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
+}
