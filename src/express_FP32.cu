@@ -39,20 +39,23 @@ void express_FP32(
     convert_double_to_float(mat + mat_offset, A, nn);
 
     /* Coefficients */
-    // std::vector<std::vector<float>> coeff = {
-    //     {8.4724206924, -24.5001735687, 17.7268180847},
-    //     {4.2052841187, -3.0549299717, 0.5567536354},
-    //     {4.0443077087, -2.9473149776, 0.5449726582},
-    //     {3.5078327656, -2.5842490196, 0.5067413449},
-    //     {2.5075511932, -1.8485442400, 0.4358045161}
-    // };
-    std::vector<std::vector<float>> coeff = { 
-        { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-        { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-        { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-        { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-        { 2.4827239537, -1.7941788274, 0.4146530436 }, 
-    };
+    // const std::vector<std::vector<float>> coeff = { 
+    //     { 8.3885353390, -23.7796270883, 16.8664591580 }, 
+    //     { 4.1636476423, -2.9650849331, 0.5297319805 }, 
+    //     { 4.0042650581, -2.8606348801, 0.5185227850 }, 
+    //     { 3.4731017481, -2.5082466382, 0.4821470022 }, 
+    //     { 2.4827239537, -1.7941788274, 0.4146530436 }, 
+    // }; const size_t smoothing_steps = 3;
+    const std::vector<std::vector<float>> coeff = { 
+        { 8.5018632351, -24.6330845767, 17.8466614026 },
+        { 4.2394319792, -3.0803745982, 0.5596805290 },
+        { 4.2371780379, -3.0779047407, 0.5594995022 },
+        { 4.1553447421, -3.0255808203, 0.5534594007 },
+        { 3.8719053120, -2.8289969308, 0.5331377564 },
+        { 3.0503282930, -2.2392300982, 0.4703818765 },
+        { 2.1450160790, -1.4976204044, 0.3936105784 }
+    }; const size_t smoothing_steps = 4;
+    
 
     /* Approximation of the step function */
     for (int i = 0; i < coeff.size(); i++) {
@@ -81,7 +84,7 @@ void express_FP32(
     }
 
     /* Smoothing function */
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < smoothing_steps; i++) {
         // A2 = A * A
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A, n, A, n, &zero, A2, n) );
 
@@ -101,17 +104,10 @@ void express_FP32(
         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
-    /* Compute A = (I + A)/2 */
-    // build I on device and store it in A2
-    build_identity(cublasH, A2, n, 1024);
-
-    // A = 1 * I + A
-    CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &one, A2, 1, A, 1) );
+    // A = I + A
+    add_identity(cublasH, A, n);
     // A = 0.5 * A
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
-
-    /* Symmetrize A */
-    symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
 
     /* Multiply the original matrix by A */
     // W = A_origin * A
