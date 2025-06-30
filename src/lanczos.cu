@@ -11,6 +11,50 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
+__global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+        vec[idx] = curand_uniform_double(&state); // random double in (0,1]
+    }
+}
+
+void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock) {
+    int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
+    fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
+}
+
+__global__ void fill_tridiagonal_kernel(double* T, const double* alpha, const double* beta, int nb_iter) {
+    int i = blockIdx.x * blockDim.x + threadIdx.x;
+    if (i < nb_iter) {
+        // Set diagonal
+        T[i * nb_iter + i] = alpha[i];
+        // Set upper diagonal
+        if (i < nb_iter - 1) {
+            T[i * nb_iter + (i + 1)] = beta[i];
+            T[(i + 1) * nb_iter + i] = beta[i];
+        }
+    }
+}
+
+void fill_tridiagonal(
+    double* T, const double *d_alpha, const double *d_beta, int nb_iter, const int threadsPerBlock = 1024
+) {
+    // Launch kernel to fill the tridiagonal matrix T
+    int blocks = (nb_iter + threadsPerBlock - 1) / threadsPerBlock;
+    fill_tridiagonal_kernel<<<blocks, threadsPerBlock>>>(T, d_alpha, d_beta, nb_iter);
+    
+    // Check for errors in kernel launch
+    CHECK_CUDA(cudaGetLastError());
+}
+
+
 void approximate_two_norm(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
@@ -123,19 +167,13 @@ void approximate_two_norm(
 
     /* Tridiagonal T */
     // T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
-    double *T;
-    CHECK_CUDA(cudaMalloc(&T, nb_iter * nb_iter * sizeof(double)));
-    std::vector<double> alpha_host(nb_iter, 0.0);
-    CHECK_CUDA(cudaMemcpy(alpha_host.data(), alpha, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
-    std::vector<double> T_host(nb_iter * nb_iter, 0.0);
-    for (int i = 0; i < nb_iter; i++) {
-        T_host[i * nb_iter + i] = alpha_host[i]; // diagonal
-        if (i < nb_iter - 1) {
-            T_host[i * nb_iter + (i + 1)] = beta[i + 1]; // upper diagonal
-            T_host[(i + 1) * nb_iter + i] = beta[i + 1]; // lower diagonal
-        }
-    }
-    CHECK_CUDA(cudaMemcpy(T, T_host.data(), nb_iter * nb_iter * sizeof(double), H2D));
+    double *T, *d_beta;
+    CHECK_CUDA(cudaMalloc(&T,       nb_iter * nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
+    fill_tridiagonal(
+        T, alpha, d_beta, nb_iter
+    );
 
     /* Largest Ritz pair */
     // allocate memory for eigenvalues
@@ -233,49 +271,6 @@ void compute_res_all(
     int blockSize = 1024;
     int numBlocks = (m + blockSize - 1) / blockSize;
     compute_res_all_kernel<<<numBlocks, blockSize>>>(Z, beta_m, res_all, m);
-    
-    // Check for errors in kernel launch
-    CHECK_CUDA(cudaGetLastError());
-}
-
-__global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) {
-        curandState state;
-        curand_init(seed, idx, 0, &state);
-        vec[idx] = curand_uniform_double(&state); // random double in (0,1]
-    }
-}
-
-void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock) {
-    int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
-    fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
-}
-
-__global__ void fill_tridiagonal_kernel(double* T, const double* alpha, const double* beta, int nb_iter) {
-    int i = blockIdx.x * blockDim.x + threadIdx.x;
-    if (i < nb_iter) {
-        // Set diagonal
-        T[i * nb_iter + i] = alpha[i];
-        // Set upper diagonal
-        if (i < nb_iter - 1) {
-            T[i * nb_iter + (i + 1)] = beta[i];
-            T[(i + 1) * nb_iter + i] = beta[i];
-        }
-    }
-}
-
-void fill_tridiagonal(
-    double* T, const double *d_alpha, const double *d_beta, int nb_iter, const int threadsPerBlock = 1024
-) {
-    // Launch kernel to fill the tridiagonal matrix T
-    int blocks = (nb_iter + threadsPerBlock - 1) / threadsPerBlock;
-    fill_tridiagonal_kernel<<<blocks, threadsPerBlock>>>(T, d_alpha, d_beta, nb_iter);
     
     // Check for errors in kernel launch
     CHECK_CUDA(cudaGetLastError());
