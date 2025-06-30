@@ -215,7 +215,7 @@ TEST(CompositeFP32, UniformAutoScaled1024)
     generateAndProject(n, dA, dA_psd, solverH, cublasH, 10.0); // cuSOLVER
 
 
-    composite_FP32_auto_scale(cublasH, solverH, dA, n, 0);
+    composite_FP32_auto_scale(cublasH, solverH, dA, n);
 
     // check if dA and dA_psd are approximately equal
     double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));

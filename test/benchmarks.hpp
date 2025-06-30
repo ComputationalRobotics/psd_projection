@@ -106,7 +106,7 @@ void benchmark_composite(
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_Lt, 1) );
 
         // project
-        composite_FP32_Lt(cublasH, cublasLtH, dA_Lt, n, 0);
+        composite_FP32_Lt(cublasH, cublasLtH, dA_Lt, n);
 
         // scale back dA_Lt to original range
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_Lt, 1) );
