@@ -9,19 +9,17 @@
 #include <chrono>
 #include <cusolverDn.h>
 
-#include "psd_projection/express_FP32_Lt.h"
+#include "psd_projection/composite_FP32.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/lanczos.h"
 #include "test_utils.hpp"
 
-TEST(ExpressFP32Lt, Deterministic)
+TEST(CompositeFP32, Deterministic)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    cublasLtHandle_t cublasLtH;
-    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 3;
     size_t nn = n*n;
@@ -40,10 +38,10 @@ TEST(ExpressFP32Lt, Deterministic)
     CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
 
     auto start = std::chrono::high_resolution_clock::now();
-    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
+    composite_FP32(cublasH, dA, n, 0);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
-    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
+    std::cout << "Time (composite): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA is approximately equal to the expected PSD matrix
     std::vector<double> expected = {
@@ -77,21 +75,13 @@ TEST(ExpressFP32Lt, Deterministic)
     for (size_t i = 0; i < nn; ++i) {
         ASSERT_NEAR(dA_h[i], expected[i], 1e-3);
     }
-
-    // cleanup
-    CHECK_CUDA(cudaFree(dA));
-    CHECK_CUBLAS(cublasDestroy(cublasH));
-    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
-    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }
 
-TEST(ExpressFP32Lt, UniformScaled)
+TEST(CompositeFP32, UniformScaled)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    cublasLtHandle_t cublasLtH;
-    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 1000;
     size_t nn = n*n;
@@ -101,11 +91,12 @@ TEST(ExpressFP32Lt, UniformScaled)
     CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
     
     generateAndProject(n, dA, dA_psd, solverH, cublasH); // cuSOLVER
+
     auto start = std::chrono::high_resolution_clock::now();
-    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
+    composite_FP32(cublasH, dA, n, 0);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
-    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
+    std::cout << "Time (composite): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA and dA_psd are approximately equal
     double *dDiff;
@@ -135,16 +126,13 @@ TEST(ExpressFP32Lt, UniformScaled)
     CHECK_CUDA(cudaFree(dDiff));
     CHECK_CUBLAS(cublasDestroy(cublasH));
     CHECK_CUSOLVER(cusolverDnDestroy(solverH));
-    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }
 
-TEST(ExpressFP32Lt, UniformNonScaled1024)
+TEST(CompositeFP32, UniformNonScaled1024)
 {
     cusolverDnHandle_t solverH; cublasHandle_t cublasH;
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    cublasLtHandle_t cublasLtH;
-    CHECK_CUBLAS( cublasLtCreate(&cublasLtH) );
 
     size_t n = 1024;
     size_t nn = n*n;
@@ -172,13 +160,14 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA, 1) );
 
     /* Project */
-    express_FP32_Lt(cublasH, cublasLtH, dA, n, 0);
+    composite_FP32(cublasH, dA, n, 0);
 
     // scale back dA to original range
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
+
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
-    std::cout << "Time (express): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
+    std::cout << "Time (composite): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
 
     // check if dA and dA_psd are approximately equal
     double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
@@ -207,5 +196,145 @@ TEST(ExpressFP32Lt, UniformNonScaled1024)
     CHECK_CUDA(cudaFree(dDiff));
     CHECK_CUBLAS(cublasDestroy(cublasH));
     CHECK_CUSOLVER(cusolverDnDestroy(solverH));
-    CHECK_CUBLAS(cublasLtDestroy(cublasLtH));
 }
+
+TEST(CompositeFP32, UniformAutoScaled1024)
+{
+    cusolverDnHandle_t solverH; cublasHandle_t cublasH;
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+
+    size_t n = 1024;
+    size_t nn = n*n;
+
+    double *dA, *dA_psd;
+    CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
+
+    // we generate a random matrix with values in [-10/n, 10/n]
+    generateAndProject(n, dA, dA_psd, solverH, cublasH, 10.0); // cuSOLVER
+
+
+    composite_FP32_auto_scale(cublasH, solverH, dA, n, 0);
+
+    // check if dA and dA_psd are approximately equal
+    double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
+    double one = 1.0, neg1 = -1.0;
+    CHECK_CUBLAS(cublasDgeam(
+        cublasH,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n,
+        &one,  dA_psd, n,
+        &neg1, dA, n,
+        dDiff,       n));
+    double final_err = 0.0f;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
+
+    double dA_psd_norm = 0.0f;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dA_psd, 1, &dA_psd_norm));
+    double relative_err = final_err / dA_psd_norm;
+
+    std::cout << "Relative error: " << std::scientific << std::setprecision(6) << relative_err << std::endl;
+    std::cout << "Final error: " << std::scientific << std::setprecision(6) << final_err << std::endl;
+    ASSERT_LE(final_err, 1e-1) << "Final error: " << final_err;
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUDA(cudaFree(dA_psd));
+    CHECK_CUDA(cudaFree(dDiff));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+}
+
+TEST(CompositeFP32, Simple5) {
+    cusolverDnHandle_t solverH; cublasHandle_t cublasH;
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+
+    size_t k = 2;
+    size_t n = 5;
+    size_t nn = n*n;
+
+    std::vector<double> diagonal = {
+        1.0, -2.0, 3.0, -4.0, 5.0
+    };
+    std::vector<double> A(nn, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        A[i*n + i] = diagonal[i];
+    }
+
+    double *dA;
+    CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
+
+    composite_FP32_auto_scale_deflate(cublasH, solverH, dA, n, 0, k);
+
+    // check if dA is approximately equal to the expected PSD matrix
+    std::vector<double> expected(nn, 0.0);
+    for (size_t i = 0; i < n; ++i) {
+        expected[i*n + i] = std::max(diagonal[i], 0.0);
+    }
+
+    CHECK_CUDA(cudaMemcpy(A.data(), dA, nn*sizeof(double), cudaMemcpyDeviceToHost));
+
+    printMatrixDouble(dA, n);
+    
+    for (size_t i = 0; i < nn; ++i) {
+        ASSERT_NEAR(A[i], expected[i], 1e-3);
+    }
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+}
+
+TEST(CompositeFP32, UniformAutoScaleDeflate1024)
+{
+    cusolverDnHandle_t solverH; cublasHandle_t cublasH;
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+
+    size_t n = 1024;
+    size_t nn = n*n;
+
+    double *dA, *dA_psd;
+    CHECK_CUDA(cudaMalloc(&dA, nn*sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
+
+    // we generate a random matrix with values in [-10/n, 10/n]
+    generateAndProject(n, dA, dA_psd, solverH, cublasH, 10.0); // cuSOLVER
+
+    composite_FP32_auto_scale_deflate(cublasH, solverH, dA, n, 0, 40, 1e-10, 1e-5);
+
+    // check if dA and dA_psd are approximately equal
+    double *dDiff; CHECK_CUDA(cudaMalloc(&dDiff, nn*sizeof(double)));
+    double one = 1.0, neg1 = -1.0;
+    CHECK_CUBLAS(cublasDgeam(
+        cublasH,
+        CUBLAS_OP_N, CUBLAS_OP_N,
+        n, n,
+        &one,  dA_psd, n,
+        &neg1, dA, n,
+        dDiff,       n));
+    double final_err = 0.0f;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dDiff, 1, &final_err));
+
+    double dA_psd_norm = 0.0f;
+    CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dA_psd, 1, &dA_psd_norm));
+    double relative_err = final_err / dA_psd_norm;
+
+    std::cout << "Relative error: " << std::scientific << std::setprecision(6) << relative_err << std::endl;
+    std::cout << "Final error: " << std::scientific << std::setprecision(6) << final_err << std::endl;
+    ASSERT_LE(final_err, 1e-1) << "Final error: " << final_err;
+
+    // cleanup
+    CHECK_CUDA(cudaFree(dA));
+    CHECK_CUDA(cudaFree(dA_psd));
+    CHECK_CUDA(cudaFree(dDiff));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
+}
+
+// TODO: add test where k >= n
+// TODO: test where k = 0

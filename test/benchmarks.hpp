@@ -10,14 +10,14 @@
 #include <cusolverDn.h>
 #include <cublasLt.h>
 
-#include "psd_projection/express_FP32_Lt.h"
+#include "psd_projection/composite_FP32_Lt.h"
 #include "psd_projection/sample_cublasLt_LtSgemm.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/lanczos.h"
 #include "test_utils.hpp"
 
-void benchmark_express(
+void benchmark_composite(
     double radius = 1.0,
     size_t n = 1024,
     size_t nb_mat = 1,
@@ -39,9 +39,9 @@ void benchmark_express(
     CHECK_CUDA(cudaMalloc(&dA_psd, nn*sizeof(double)));
     CHECK_CUDA(cudaMalloc(&dDiff,  nn*sizeof(double)));
 
-    std::chrono::duration<double> time_cusolver(0.0), time_express(0.0), time_express_Lt(0.0);
-    double error_express = 0.0, error_express_Lt = 0.0;
-    double relative_error_express = 0.0, relative_error_express_Lt = 0.0;
+    std::chrono::duration<double> time_cusolver(0.0), time_composite(0.0), time_composite_Lt(0.0);
+    double error_composite = 0.0, error_composite_Lt = 0.0;
+    double relative_error_composite = 0.0, relative_error_composite_Lt = 0.0;
 
     double one = 1.0, neg1 = -1.0;
 
@@ -55,7 +55,7 @@ void benchmark_express(
         // copy dA to dA_Lt
         CHECK_CUDA(cudaMemcpy(dA_Lt, dA, nn*sizeof(double), cudaMemcpyDeviceToDevice));
 
-        /* Solve using express_FP32 */
+        /* Solve using composite_FP32 */
         auto start = std::chrono::high_resolution_clock::now();
         double lo, up;
         approximate_two_norm(
@@ -69,12 +69,12 @@ void benchmark_express(
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA, 1) );
 
         // project
-        express_FP32(cublasH, dA, n, 0);
+        composite_FP32(cublasH, dA, n, 0);
 
         // scale back dA to original range
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
 
-        time_express += std::chrono::high_resolution_clock::now() - start;
+        time_composite += std::chrono::high_resolution_clock::now() - start;
 
         // compute error
         CHECK_CUBLAS(cublasDgeam(
@@ -89,11 +89,11 @@ void benchmark_express(
         double dA_psd_norm = 0.0f;
         CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dA_psd, 1, &dA_psd_norm));
         double relative_err = final_err / dA_psd_norm;
-        error_express += final_err;
-        relative_error_express += relative_err;
+        error_composite += final_err;
+        relative_error_composite += relative_err;
 
 
-        /* Solve using express_FP32_Lt */
+        /* Solve using composite_FP32_Lt */
         start = std::chrono::high_resolution_clock::now();
         approximate_two_norm(
             cublasH, solverH, dA_Lt, n, &lo, &up, lanczos_max_iter, lanczos_tol
@@ -106,12 +106,12 @@ void benchmark_express(
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA_Lt, 1) );
 
         // project
-        express_FP32_Lt(cublasH, cublasLtH, dA_Lt, n, 0);
+        composite_FP32_Lt(cublasH, cublasLtH, dA_Lt, n, 0);
 
         // scale back dA_Lt to original range
         CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA_Lt, 1) );
 
-        time_express_Lt += std::chrono::high_resolution_clock::now() - start;
+        time_composite_Lt += std::chrono::high_resolution_clock::now() - start;
 
         // compute error
         CHECK_CUBLAS(cublasDgeam(
@@ -126,21 +126,21 @@ void benchmark_express(
         double dA_psd_norm_Lt = 0.0f;
         CHECK_CUBLAS(cublasDnrm2(cublasH, nn, dA_psd, 1, &dA_psd_norm_Lt));
         double relative_err_Lt = final_err_Lt / dA_psd_norm_Lt;
-        error_express_Lt += final_err_Lt;
-        relative_error_express_Lt += relative_err_Lt;
+        error_composite_Lt += final_err_Lt;
+        relative_error_composite_Lt += relative_err_Lt;
     }
 
     /* Print info */
     std::cout << "Benchmarking with " << nb_mat << " matrices of size " << n << "x" << n << " and radius " << std::fixed << radius << std::endl;
     std::cout << std::endl;
     std::cout << "  Time (cuSOLVER):             " << std::scientific << std::setprecision(4) << time_cusolver.count() / (double)nb_mat << "s" << std::endl;
-    std::cout << "  Time (Express):              " << std::scientific << std::setprecision(4) << time_express.count() / (double)nb_mat << "s" << std::endl;
-    std::cout << "  Time (Express Lt):           " << std::scientific << std::setprecision(4) << time_express_Lt.count() / (double)nb_mat << "s" << std::endl;
+    std::cout << "  Time (composite):              " << std::scientific << std::setprecision(4) << time_composite.count() / (double)nb_mat << "s" << std::endl;
+    std::cout << "  Time (composite Lt):           " << std::scientific << std::setprecision(4) << time_composite_Lt.count() / (double)nb_mat << "s" << std::endl;
     std::cout << std::endl;
-    std::cout << "  Error (Express):             " << std::scientific << std::setprecision(4) << error_express / (double)nb_mat << std::endl;
-    std::cout << "  Error (Express Lt):          " << std::scientific << std::setprecision(4) << error_express_Lt / (double)nb_mat << std::endl;
-    std::cout << "  Relative Error (Express):    " << std::scientific << std::setprecision(4) << relative_error_express / (double)nb_mat << std::endl;
-    std::cout << "  Relative Error (Express Lt): " << std::scientific << std::setprecision(4) << relative_error_express_Lt / (double)nb_mat << std::endl;
+    std::cout << "  Error (composite):             " << std::scientific << std::setprecision(4) << error_composite / (double)nb_mat << std::endl;
+    std::cout << "  Error (composite Lt):          " << std::scientific << std::setprecision(4) << error_composite_Lt / (double)nb_mat << std::endl;
+    std::cout << "  Relative Error (composite):    " << std::scientific << std::setprecision(4) << relative_error_composite / (double)nb_mat << std::endl;
+    std::cout << "  Relative Error (composite Lt): " << std::scientific << std::setprecision(4) << relative_error_composite_Lt / (double)nb_mat << std::endl;
     std::cout << std::endl;
 
     /* Cleanup */
@@ -155,11 +155,11 @@ void benchmark_express(
 
 TEST(Benchmarks, Uniform)
 {
-    benchmark_express(1.0, 1000, 10);
-    benchmark_express(10.0, 1000, 10);
-    // benchmark_express(1.0, 5000, 10);
-    // benchmark_express(10.0, 5000, 10);
-    // benchmark_express(10.0, 5000, 10, 10, 1e-3);
+    benchmark_composite(1.0, 1000, 10);
+    benchmark_composite(10.0, 1000, 10);
+    // benchmark_composite(1.0, 5000, 10);
+    // benchmark_composite(10.0, 5000, 10);
+    // benchmark_composite(10.0, 5000, 10, 10, 1e-3);
 }
 
 TEST(Benchmarks, MatMul)

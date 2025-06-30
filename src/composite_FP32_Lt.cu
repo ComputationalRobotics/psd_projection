@@ -7,12 +7,12 @@
 #include <vector>
 #include <iostream>
 
-#include "psd_projection/express_FP32_Lt.h"
+#include "psd_projection/composite_FP32_Lt.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/sample_cublasLt_LtSgemm.h"
 
-void express_FP32_Lt(
+void composite_FP32_Lt(
     cublasHandle_t cublasH,
     cublasLtHandle_t cublasLtH,
     double* mat,

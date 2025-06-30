@@ -1,10 +1,10 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#include "psd_projection/express_TF16.h"
+#include "psd_projection/composite_TF16.h"
 #include "psd_projection/utils.h"
 
-void express_TF16(
+void composite_TF16(
     cublasHandle_t cublasH,
     double* mat,
     const int n,

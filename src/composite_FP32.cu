@@ -7,12 +7,12 @@
 #include <vector>
 #include <iostream>
 
-#include "psd_projection/express_FP32.h"
+#include "psd_projection/composite_FP32.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-void express_FP32(
+void composite_FP32(
     cublasHandle_t cublasH,
     double* mat,
     const int n,
@@ -126,7 +126,7 @@ void express_FP32(
     CHECK_CUDA( cudaFree(A3) );
 }
 
-void express_FP32_auto_scale(
+void composite_FP32_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
@@ -146,8 +146,8 @@ void express_FP32_auto_scale(
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
 
-    // project the matrix using the express_FP32 function
-    express_FP32(
+    // project the matrix using the composite_FP32 function
+    composite_FP32(
         cublasH, mat + mat_offset, n, 0
     );
 
@@ -155,7 +155,7 @@ void express_FP32_auto_scale(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat + mat_offset, 1) );
 }
 
-void express_FP32_auto_scale_deflate(
+void composite_FP32_auto_scale_deflate(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
@@ -199,8 +199,8 @@ void express_FP32_auto_scale_deflate(
     const double inv_scale = 1.0/scale;
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
 
-    /* Step 4: project the matrix using the express_FP32 function */
-    express_FP32(
+    /* Step 4: project the matrix using the composite_FP32 function */
+    composite_FP32(
         cublasH, mat + mat_offset, n, 0, verbose
     );
 

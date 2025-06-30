@@ -1,5 +1,5 @@
-#ifndef PSD_PROJECTION_EXPRESS_FP32_H
-#define PSD_PROJECTION_EXPRESS_FP32_H
+#ifndef PSD_PROJECTION_COMPOSITE_FP32_H
+#define PSD_PROJECTION_COMPOSITE_FP32_H
 
 #include <cublas_v2.h>
 
@@ -8,7 +8,7 @@
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
 /// @param mat_offset the offset in the matrix where the projection starts (default is 0)
-void express_FP32(
+void composite_FP32(
     cublasHandle_t cublasH,
     double* mat,
     const int mat_size,
@@ -21,7 +21,7 @@ void express_FP32(
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
 /// @param mat_offset the offset in the matrix where the projection starts (default is 0)
-void express_FP32_auto_scale(
+void composite_FP32_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
@@ -34,7 +34,7 @@ void express_FP32_auto_scale(
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
 /// @param mat_offset the offset in the matrix where the projection starts (default is 0)
-void express_FP32_auto_scale_deflate(
+void composite_FP32_auto_scale_deflate(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
@@ -46,4 +46,4 @@ void express_FP32_auto_scale_deflate(
     const bool verbose = false
 );
 
-#endif // PSD_PROJECTION_EXPRESS_FP32_H
+#endif // PSD_PROJECTION_COMPOSITE_FP32_H
