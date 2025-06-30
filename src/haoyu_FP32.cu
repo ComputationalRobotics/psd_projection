@@ -15,7 +15,7 @@ void haoyu_FP32(
 ) {
     const int nn = n * n;
 
-    // 3) Allocate device buffers
+    // Allocate device buffers
     float *dA_our, *dTmp, *dT1, *dT2, *dF;
     CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
@@ -23,13 +23,12 @@ void haoyu_FP32(
     CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
 
-    // 4) Copy host to device
+    // Copy host to device
     CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
 
     const float one = 1.0f, zero = 0.0f;
     float half = 0.5f;
 
-    // 6) Iterative algorithm in float, printing after each iter
     for (int iter = 1; iter <= 10; iter++) {
         // T1 = A_our * A_our
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dA_our, n, &zero, dT1, n) );
@@ -75,7 +74,7 @@ void haoyu_FP32(
             dA_our, n));
     }
     
-    // 7) Final combine: mat = mat * (A_our + I) / 2
+    // Final combine: mat = mat * (A_our + I) / 2
     identity_plus(dA_our, dF, n);
     CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, mat, n, dF, n, &zero, dTmp, n) );
     CHECK_CUDA(cudaMemcpy(mat, dTmp, nn*sizeof(float), D2D));

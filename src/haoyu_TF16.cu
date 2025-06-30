@@ -15,7 +15,7 @@ void haoyu_TF16(
 ) {
     const int nn = n * n;
 
-    // 3) Allocate device buffers
+    // Allocate device buffers
     float *dA_our, *dTmp, *dT1, *dT2, *dF;
     CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
@@ -23,7 +23,7 @@ void haoyu_TF16(
     CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
 
-    // 4) Copy host to device
+    // Copy host to device
     CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
 
     // half buffers
@@ -34,7 +34,7 @@ void haoyu_TF16(
     const float one = 1.0f, zero = 0.0f;
     float half = 0.5f;
 
-    // 6) Iterative algorithm in float, printing after each iter
+    // Iterative algorithm in float, printing after each iter
     for (int iter = 1; iter <= 7; iter++) {
         // T1 = A_our * A_our
         convert_float_to_half4(dA_our, dT3_half, nn);
@@ -133,7 +133,7 @@ void haoyu_TF16(
             dA_our, n));
     }
     
-    // 7) Final combine: mat = mat * (A_our + I) / 2
+    // Final combine: mat = mat * (A_our + I) / 2
     identity_plus(dA_our, dF, n);
 
     convert_float_to_half4(mat, dT3_half, nn);
