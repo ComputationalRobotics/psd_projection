@@ -1,0 +1,92 @@
+#include <cuda_runtime.h>
+#include <cublas_v2.h>
+#include <cusolverDn.h>
+#include <cuda_fp16.h>
+#include <cmath>
+
+#include "psd_projection/haoyu_FP32.h"
+#include "psd_projection/check.h"
+#include "psd_projection/utils.h"
+
+void haoyu_FP32(
+    cublasHandle_t cublasH,
+    float* mat,
+    const int n
+) {
+    const int nn = n * n;
+
+    // 3) Allocate device buffers
+    float *dA_our, *dTmp, *dT1, *dT2, *dF;
+    CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
+    CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
+
+    // 4) Copy host to device
+    CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
+
+    const float one = 1.0f, zero = 0.0f;
+    float half = 0.5f;
+
+    // 6) Iterative algorithm in float, printing after each iter
+    for (int iter = 1; iter <= 10; iter++) {
+        // T1 = A_our * A_our
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dA_our, n, &zero, dT1, n) );
+
+        // T2 = I - T1
+        identity_minus(dT1, dT2, n);
+
+        // T1 = T2 * T2
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dT2, n, dT2, n, &zero, dT1, n) );
+
+        // F = I + log(iter+10)*T1
+        float logv = std::log(iter + 10.0f);
+        CHECK_CUBLAS(cublasSscal(cublasH, nn, &logv, dT1, 1));
+        identity_plus(dT1, dF, n);
+
+        // A_our = A_our * F (to dTmp, then copy back)
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dF, n, &zero, dTmp, n) );
+        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+        // T1 = A_our^2, T2 = I - T1
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dA_our, n, &zero, dT1, n) );
+
+        identity_minus(dT1, dT2, n);
+
+        // F = I + (1/sqrt(iter))*T2
+        float invs = 1.0f / std::sqrt((float)iter);
+        CHECK_CUBLAS(cublasSscal(cublasH, nn, &invs, dT2, 1));
+        identity_plus(dT2, dF, n);
+            
+        // A_our = A_our * F (to dTmp)
+        CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dF, n, &zero, dTmp, n) );
+
+        // A_our <-- Tmp
+        CHECK_CUDA(cudaMemcpy(dA_our, dTmp, nn*sizeof(float), cudaMemcpyDeviceToDevice));
+
+        // force symmetry: A_our <-- 0.5 * (A_our + Tmp')
+        CHECK_CUBLAS(cublasSgeam(
+            cublasH,
+            CUBLAS_OP_N, CUBLAS_OP_T,
+            n, n,
+            &half, dA_our, n,
+            &half, dTmp, n,
+            dA_our, n));
+    }
+    
+    // 7) Final combine: mat = mat * (A_our + I) / 2
+    identity_plus(dA_our, dF, n);
+    CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, mat, n, dF, n, &zero, dTmp, n) );
+    CHECK_CUDA(cudaMemcpy(mat, dTmp, nn*sizeof(float), D2D));
+    CHECK_CUBLAS(cublasSscal(cublasH, nn, &half, mat, 1));
+
+    /* Free memory */
+    CHECK_CUDA(cudaFree(dA_our));
+    CHECK_CUDA(cudaFree(dTmp));
+    CHECK_CUDA(cudaFree(dT1));
+    CHECK_CUDA(cudaFree(dT2));
+    CHECK_CUDA(cudaFree(dF));
+
+    return;
+}

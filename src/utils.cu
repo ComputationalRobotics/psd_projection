@@ -127,3 +127,58 @@ void convert_float_to_half4(const float* dA, __half* dB, size_t N) {
     int grid = (N4 + blk - 1)/blk;
     float4_to_half_kernel<<<grid,blk>>>(A4, B2, N4);
 }
+
+// Kernel to replace A by I - A
+__global__ void identity_minus_kernel(const float* A_in, float* A_out, const int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        int row = idx / n;
+        int col = idx % n;
+        if (row == col) {
+            A_out[idx] = 1.0f - A_in[idx]; // diagonal elements
+        } else {
+            A_out[idx] = -A_in[idx]; // off-diagonal elements
+        }
+    }
+}
+
+void identity_minus(
+    const float* A_in,
+    float* A_out,
+    const int n
+) {
+    const int nn = n * n;
+    const int threads = 1024;
+    const int blocks = (nn + threads - 1) / threads;
+
+    // Launch kernel to compute I - A
+    identity_minus_kernel<<<blocks, threads>>>(A_in, A_out, n);
+    CHECK_CUDA(cudaGetLastError());
+}
+
+// Kernel to replace A by I + A
+__global__ void identity_plus_kernel(const float* A_in, float* A_out, const int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n * n) {
+        int row = idx / n;
+        int col = idx % n;
+        if (row == col)
+            A_out[idx] = 1.0f + A_in[idx]; // diagonal elements
+        else
+            A_out[idx] = A_in[idx]; // off-diagonal elements
+    }
+}
+
+void identity_plus(
+    const float* A_in, // device pointer to matrix A
+    float* A_out, // device pointer to matrix A
+    const int n
+) {
+    const int nn = n * n;
+    const int threads = 1024;
+    const int blocks = (nn + threads - 1) / threads;
+
+    // Launch kernel to compute I + A
+    identity_plus_kernel<<<blocks, threads>>>(A_in, A_out, n);
+    CHECK_CUDA(cudaGetLastError());
+}

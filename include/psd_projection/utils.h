@@ -126,4 +126,20 @@ __global__ void float4_to_half_kernel(
 /// @param N the size of the input array (number of floats)
 void convert_float_to_half4(const float* dA, __half* dB, size_t N);
 
+__global__ void identity_minus_kernel(const float* A_in, float* A_out, const int n);
+
+void identity_minus(
+    const float* A_in,
+    float* A_out,
+    const int n
+);
+
+__global__ void identity_plus_kernel(const float* A_in, float* A_out, const int n);
+
+void identity_plus(
+    const float* A_in, // device pointer to matrix A
+    float* A_out, // device pointer to matrix A
+    const int n
+);
+
 #endif // PSD_PROJECTION_UTILS_H

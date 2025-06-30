@@ -8,61 +8,6 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-// Kernel to replace A by I - A
-__global__ void identity_minus_kernel(const float* A_in, float* A_out, const int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * n) {
-        int row = idx / n;
-        int col = idx % n;
-        if (row == col) {
-            A_out[idx] = 1.0f - A_in[idx]; // diagonal elements
-        } else {
-            A_out[idx] = -A_in[idx]; // off-diagonal elements
-        }
-    }
-}
-
-void identity_minus(
-    const float* A_in,
-    float* A_out,
-    const int n
-) {
-    const int nn = n * n;
-    const int threads = 1024;
-    const int blocks = (nn + threads - 1) / threads;
-
-    // Launch kernel to compute I - A
-    identity_minus_kernel<<<blocks, threads>>>(A_in, A_out, n);
-    CHECK_CUDA(cudaGetLastError());
-}
-
-// Kernel to replace A by I + A
-__global__ void identity_plus_kernel(const float* A_in, float* A_out, const int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n * n) {
-        int row = idx / n;
-        int col = idx % n;
-        if (row == col)
-            A_out[idx] = 1.0f + A_in[idx]; // diagonal elements
-        else
-            A_out[idx] = A_in[idx]; // off-diagonal elements
-    }
-}
-
-void identity_plus(
-    const float* A_in, // device pointer to matrix A
-    float* A_out, // device pointer to matrix A
-    const int n
-) {
-    const int nn = n * n;
-    const int threads = 1024;
-    const int blocks = (nn + threads - 1) / threads;
-
-    // Launch kernel to compute I + A
-    identity_plus_kernel<<<blocks, threads>>>(A_in, A_out, n);
-    CHECK_CUDA(cudaGetLastError());
-}
-
 void haoyu_TF16(
     cublasHandle_t cublasH,
     float* mat,
@@ -71,13 +16,12 @@ void haoyu_TF16(
     const int nn = n * n;
 
     // 3) Allocate device buffers
-    float *dA_our, *dTmp, *dT1, *dT2, *dF, *dDiff;
+    float *dA_our, *dTmp, *dT1, *dT2, *dF;
     CHECK_CUDA(cudaMalloc(&dA_our,  nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dTmp,    nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dT1,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dT2,     nn*sizeof(float)));
     CHECK_CUDA(cudaMalloc(&dF,      nn*sizeof(float)));
-    CHECK_CUDA(cudaMalloc(&dDiff,   nn*sizeof(float)));    
 
     // 4) Copy host to device
     CHECK_CUDA(cudaMemcpy(dA_our, mat, nn*sizeof(float), D2D));
@@ -213,7 +157,6 @@ void haoyu_TF16(
     CHECK_CUDA(cudaFree(dT1));
     CHECK_CUDA(cudaFree(dT2));
     CHECK_CUDA(cudaFree(dF));
-    CHECK_CUDA(cudaFree(dDiff));
     CHECK_CUDA(cudaFree(dT3_half));
     CHECK_CUDA(cudaFree(dT4_half));
 
