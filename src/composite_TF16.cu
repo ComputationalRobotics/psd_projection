@@ -7,8 +7,7 @@
 void composite_TF16(
     cublasHandle_t cublasH,
     double* mat,
-    const int n,
-    const int mat_offset
+    const int n
 ) {
     const int nn = n * n;
 
@@ -31,7 +30,7 @@ void composite_TF16(
     const float one_n_half =  1.5f;
     const float zero       =  0.0f;
 
-    convert_double_to_float(mat + mat_offset, A, nn);
+    convert_double_to_float(mat, A, nn);
 
     /* Coefficients */
     // std::vector<std::vector<float>> coeff = {
@@ -155,7 +154,7 @@ void composite_TF16(
     CHECK_CUBLAS( cublasSscal(cublasH, nn, &half, A, 1) );
 
     /* Multiply the original matrix by A */
-    convert_double_to_float(mat + mat_offset, A2, nn);
+    convert_double_to_float(mat, A2, nn);
     convert_float_to_half4(A, hA, nn);
     convert_float_to_half4(A2, hA2, nn);
     CHECK_CUBLAS(cublasGemmEx(
@@ -173,7 +172,7 @@ void composite_TF16(
     symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    convert_float_to_double(A3, mat + mat_offset, nn);
+    convert_float_to_double(A3, mat, nn);
 
     /* Free device memory */
     CHECK_CUDA( cudaFree(A) );

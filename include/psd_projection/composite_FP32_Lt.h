@@ -9,13 +9,11 @@
 /// @param cublasLtH a cuBLASLt handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
-/// @param mat_offset the offset in the matrix where the projection starts (default is 0)
 void composite_FP32_Lt(
     cublasHandle_t cublasH,
     cublasLtHandle_t cublasLtH,
     double* mat,
-    const int mat_size,
-    const int mat_offset = 0
+    const int mat_size
 );
 
 #endif // PSD_PROJECTION_COMPOSITE_FP32_LT_H

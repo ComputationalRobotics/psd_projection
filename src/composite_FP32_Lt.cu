@@ -16,8 +16,7 @@ void composite_FP32_Lt(
     cublasHandle_t cublasH,
     cublasLtHandle_t cublasLtH,
     double* mat,
-    const int n,
-    const int mat_offset
+    const int n
 ) {
 
     // create a workspace for cublasLt
@@ -53,7 +52,7 @@ void composite_FP32_Lt(
     /* Convert the initial matrix*/
     // copy the double matrix back to the host
     std::vector<double> A_h_d(nn);
-    CHECK_CUDA( cudaMemcpy(A_h_d.data(), mat + mat_offset, nn * sizeof(double), D2H) );
+    CHECK_CUDA( cudaMemcpy(A_h_d.data(), mat, nn * sizeof(double), D2H) );
 
     // convert the host matrix to float
     std::vector<float> A_h(nn);
@@ -148,7 +147,7 @@ void composite_FP32_Lt(
     for (size_t i = 0; i < nn; i++) {
         A_h_d[i] = static_cast<double>(A_h_f[i]);
     }
-    CHECK_CUDA( cudaMemcpy(mat + mat_offset, A_h_d.data(), nn * sizeof(double), H2D) );
+    CHECK_CUDA( cudaMemcpy(mat, A_h_d.data(), nn * sizeof(double), H2D) );
     CHECK_CUDA( cudaDeviceSynchronize() );
 
     /* Free device memory */

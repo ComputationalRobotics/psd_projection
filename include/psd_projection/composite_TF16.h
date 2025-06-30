@@ -7,12 +7,10 @@
 /// @param cublasH a cuBLAS handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
-/// @param mat_offset the offset in the matrix where the projection starts (default is 0)
 void composite_TF16(
     cublasHandle_t cublasH,
     double* mat,
-    const int n,
-    const int mat_offset = 0
+    const int n
 );
 
 #endif // PSD_PROJECTION_COMPOSITE_TF16_H

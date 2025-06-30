@@ -16,7 +16,6 @@ void composite_FP32(
     cublasHandle_t cublasH,
     double* mat,
     const int n,
-    const int mat_offset,
     const bool verbose
 ) {
     const int nn = n * n;
@@ -36,7 +35,7 @@ void composite_FP32(
     const float zero       =  0.0f;
 
     /* Convert the initial matrix*/
-    convert_double_to_float(mat + mat_offset, A, nn);
+    convert_double_to_float(mat, A, nn);
 
     /* Coefficients */
     // const std::vector<std::vector<float>> coeff = { 
@@ -111,14 +110,14 @@ void composite_FP32(
 
     /* Multiply the original matrix by A */
     // W = A_origin * A
-    convert_double_to_float(mat + mat_offset, A2, nn);
+    convert_double_to_float(mat, A2, nn);
     CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, A2, n, A, n, &zero, A3, n) );
 
     /* Symmetrize W */
     symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
     /* Copy the result back to mat */
-    convert_float_to_double(A3, mat + mat_offset, nn);
+    convert_float_to_double(A3, mat, nn);
 
     /* Free device memory */
     CHECK_CUDA( cudaFree(A) );
@@ -130,29 +129,28 @@ void composite_FP32_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
-    const int n,
-    const int mat_offset
+    const int n
 ) {
     size_t nn = n * n;
     
     // Use the Lanczos method to approximate the two-norm of the matrix
     double lo, up;
     approximate_two_norm(
-        cublasH, solverH, mat + mat_offset, n, &lo, &up
+        cublasH, solverH, mat, n, &lo, &up
     );
 
     // scale to have eigenvalues in [-1, 1]
     const double scale = up > 0.0 ? up : 1.0;
     const double inv_scale = 1.0/scale;
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     // project the matrix using the composite_FP32 function
     composite_FP32(
-        cublasH, mat + mat_offset, n, 0
+        cublasH, mat, n, 0
     );
 
     // rescale the result back to the original scale
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat + mat_offset, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );
 }
 
 void composite_FP32_auto_scale_deflate(
@@ -160,7 +158,6 @@ void composite_FP32_auto_scale_deflate(
     cusolverDnHandle_t solverH,
     double* mat,
     const int n,
-    const int mat_offset,
     const size_t k,
     const double tol,
     const double ortho_tol,
@@ -175,7 +172,7 @@ void composite_FP32_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     double _ = compute_eigenpairs(
-        cublasH, solverH, mat + mat_offset, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol, verbose
+        cublasH, solverH, mat, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol, verbose
     );
 
     std::vector<double> eigenvalues_host(r);
@@ -186,33 +183,33 @@ void composite_FP32_auto_scale_deflate(
         // X <- X - \lambda_i * v_i v_i^T
         double lambda = -eigenvalues_host[i];
         double *v_i = eigenvectors + i * n;
-        CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat + mat_offset, n) );
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat, n) );
     }
 
     /* Step 3: scale the deflated matrix */
     double up = compute_eigenpairs(
-        cublasH, solverH, mat + mat_offset, n, 0, nullptr, nullptr, nullptr, true, 100, 1e-10, 1e-5, verbose
+        cublasH, solverH, mat, n, 0, nullptr, nullptr, nullptr, true, 100, 1e-10, 1e-5, verbose
     );
 
     // scale to have eigenvalues in [-1, 1]
     const double scale = up > 0.0 ? 1.1 * up + 1e-5 : 1.0;
     const double inv_scale = 1.0/scale;
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat + mat_offset, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     /* Step 4: project the matrix using the composite_FP32 function */
     composite_FP32(
-        cublasH, mat + mat_offset, n, 0, verbose
+        cublasH, mat, n, verbose
     );
 
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
-    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat + mat_offset, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
 
     for (int i = 0; i < r; i++) {
         // X <- X + \lambda_i * v_i v_i^T
         double lambda = eigenvalues_host[i];
         if (lambda > 0.0) { // only add positive eigenvalues
             double *v_i = eigenvectors + i * n;
-            CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat + mat_offset, n) );
+            CHECK_CUBLAS( cublasDger(cublasH, n, n, &lambda, v_i, 1, v_i, 1, mat, n) );
         }
     }
 
