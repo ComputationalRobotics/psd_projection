@@ -68,14 +68,16 @@ void approximate_two_norm(
     const double one = 1.0;
     
     // storage
-    double *V, *V_old, *alpha, *q, *w;
+    double *V, *V_old, *d_alpha, *q, *w, *w1;
     max_iter = min(max_iter, n);
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&alpha,     max_iter * sizeof(double))); // TODO: on host
+    CHECK_CUDA(cudaMalloc(&d_alpha,     max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&w1,               n * sizeof(double)));
 
+    std::vector<double> alpha(max_iter, 0.0);
     std::vector<double> beta(max_iter, 0.0);
 
     double minus_alpha, minus_beta_old = 0.0;
@@ -104,18 +106,20 @@ void approximate_two_norm(
         CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
                                  &one, A, n, q, 1,
                                  &zero, w, 1));
-        // w = At * w
+
+        // w1 = At * w
         CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
                                  &one, A, n, w, 1,
-                                 &zero, w, 1));
+                                 &zero, w1, 1));
+        // w = w1
+        CHECK_CUBLAS(cublasDcopy(cublasH, n, w1, 1, w, 1));
         // hence w = A^T * A * q
 
         // alpha(k) = q^T * w
         CHECK_CUBLAS(cublasDdot(cublasH, n, q, 1, w, 1, &alpha[k]));
 
         // minus_alpha = -alpha[k]
-        CHECK_CUDA(cudaMemcpy(&minus_alpha, &alpha[k], sizeof(double), D2H));
-        minus_alpha = -minus_alpha;
+        minus_alpha = -alpha[k];
         
         // w = w - alpha(k) * q - beta_old * V_old
         CHECK_CUBLAS(cublasDaxpy(cublasH, n, &minus_alpha, q, 1, w, 1));
@@ -124,7 +128,7 @@ void approximate_two_norm(
         // beta(k) = norm(w)
         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
 
-        if (beta[k] <= tol * (-minus_alpha) && k > 1)
+        if (beta[k] <= tol * alpha[k] && k > 1)
             break;
             
         // V_old = q
@@ -157,9 +161,10 @@ void approximate_two_norm(
 
         CHECK_CUDA(cudaFree(V));
         CHECK_CUDA(cudaFree(V_old));
-        CHECK_CUDA(cudaFree(alpha));
+        CHECK_CUDA(cudaFree(d_alpha));
         CHECK_CUDA(cudaFree(q));
         CHECK_CUDA(cudaFree(w));
+        CHECK_CUDA(cudaFree(w1));
         CHECK_CUDA(cudaDeviceSynchronize());
 
         return;
@@ -170,9 +175,10 @@ void approximate_two_norm(
     double *T, *d_beta;
     CHECK_CUDA(cudaMalloc(&T,       nb_iter * nb_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), (nb_iter - 1) * sizeof(double), H2D));
     CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
     fill_tridiagonal(
-        T, alpha, d_beta, nb_iter
+        T, d_alpha, d_beta, nb_iter
     );
 
     /* Largest Ritz pair */
@@ -215,10 +221,12 @@ void approximate_two_norm(
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
                                 &one, A, n, q, 1,
                                 &zero, ry, 1));
-    // ry = At * ry
+    // w1 = At * ry
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
                                 &one, A, n, ry, 1,
-                                &zero, ry, 1));
+                                &zero, w1, 1));
+    // ry = w1
+    CHECK_CUBLAS(cublasDcopy(cublasH, n, ry, 1, w1, 1));
     // hence ry = A^T * A * q
 
     // ry = ry - theta * y
@@ -237,9 +245,10 @@ void approximate_two_norm(
     /* Free memory */
     CHECK_CUDA(cudaFree(V));
     CHECK_CUDA(cudaFree(V_old));
-    CHECK_CUDA(cudaFree(alpha));
+    CHECK_CUDA(cudaFree(d_alpha));
     CHECK_CUDA(cudaFree(q));
     CHECK_CUDA(cudaFree(w));
+    CHECK_CUDA(cudaFree(w1));
     CHECK_CUDA(cudaFree(T));
     CHECK_CUDA(cudaFree(d_eigenvalues));
     CHECK_CUDA(cudaFree(d_work_eig));
