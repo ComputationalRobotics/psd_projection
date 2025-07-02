@@ -111,7 +111,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     // call the appropriate method
     if (method == "composite_TF16")
         composite_TF16(cublasH, dA_psd, n);
-    else if (method == "composite_TF32")
+    else if (method == "composite_FP32")
         composite_FP32(cublasH, dA_psd, n);
     else if (method == "haoyu_TF16") {
         float* dA_psd_float;
@@ -122,7 +122,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         CHECK_CUDA(cudaFree(dA_psd_float));
      }
     else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_TF32', 'haoyu_TF16'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'haoyu_TF16'.");
         return;
     }
 
