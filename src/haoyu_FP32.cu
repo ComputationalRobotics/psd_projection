@@ -29,7 +29,7 @@ void haoyu_FP32(
     const float one = 1.0f, zero = 0.0f;
     float half = 0.5f;
 
-    for (int iter = 1; iter <= 10; iter++) {
+    for (int iter = 1; iter <= 6; iter++) {
         // T1 = A_our * A_our
         CHECK_CUBLAS( cublasSgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, n, n, &one, dA_our, n, dA_our, n, &zero, dT1, n) );
 

@@ -138,4 +138,5 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     // free
     CHECK_CUDA(cudaFree(dA_psd));
     CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
 }

@@ -40,12 +40,22 @@ void composite_TF16(
     //     {3.5078327656, -2.5842490196, 0.5067413449},
     //     {2.5075511932, -1.8485442400, 0.4358045161}
     // };
+    // std::vector<std::vector<float>> coeff = { 
+    //     { 8.3885353390, -23.7796270883, 16.8664591580 }, 
+    //     { 4.1636476423, -2.9650849331, 0.5297319805 }, 
+    //     { 4.0042650581, -2.8606348801, 0.5185227850 }, 
+    //     { 3.4731017481, -2.5082466382, 0.4821470022 }, 
+    //     { 2.4827239537, -1.7941788274, 0.4146530436 }, 
+    // };
+
     std::vector<std::vector<float>> coeff = { 
-        { 8.3885353390, -23.7796270883, 16.8664591580 }, 
-        { 4.1636476423, -2.9650849331, 0.5297319805 }, 
-        { 4.0042650581, -2.8606348801, 0.5185227850 }, 
-        { 3.4731017481, -2.5082466382, 0.4821470022 }, 
-        { 2.4827239537, -1.7941788274, 0.4146530436 }, 
+        { 8.3937001154, -23.7945582332, 16.8758390904 }, 
+        { 4.1803895500, -2.9788012917, 0.5318143742 }, 
+        { 4.0578478573, -2.9013956514, 0.5233571836 }, 
+        { 3.6289664769, -2.6254124593, 0.4963343458 }, 
+        { 2.7619020904, -1.9865006927, 0.4388497859 }, 
+        { 2.0674922563, -1.4317903208, 0.3876934521 }, 
+        { 1.8438914749, -1.1872290786, 0.3433825749 }, 
     };
 
     /* Approximation of the step function */
@@ -108,46 +118,46 @@ void composite_TF16(
         symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
     }
 
-    /* Smoothing function */
-    for (int i = 0; i < 3; i++) {
-        // A2 = A * A
-        convert_float_to_half4(A, hA, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA, CUDA_R_16F, n,
-            &zero,
-            A2,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    // /* Smoothing function */
+    // for (int i = 0; i < 3; i++) {
+    //     // A2 = A * A
+    //     convert_float_to_half4(A, hA, nn);
+    //     CHECK_CUBLAS(cublasGemmEx(
+    //         cublasH,
+    //         CUBLAS_OP_N, CUBLAS_OP_N,
+    //         n, n, n,
+    //         &one,
+    //         hA, CUDA_R_16F, n,
+    //         hA, CUDA_R_16F, n,
+    //         &zero,
+    //         A2,    CUDA_R_32F, n,
+    //         CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
-        // A3 = A2 * A
-        convert_float_to_half4(A2, hA2, nn);
-        CHECK_CUBLAS(cublasGemmEx(
-            cublasH,
-            CUBLAS_OP_N, CUBLAS_OP_N,
-            n, n, n,
-            &one,
-            hA, CUDA_R_16F, n,
-            hA2, CUDA_R_16F, n,
-            &zero,
-            A3,    CUDA_R_32F, n,
-            CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
+    //     // A3 = A2 * A
+    //     convert_float_to_half4(A2, hA2, nn);
+    //     CHECK_CUBLAS(cublasGemmEx(
+    //         cublasH,
+    //         CUBLAS_OP_N, CUBLAS_OP_N,
+    //         n, n, n,
+    //         &one,
+    //         hA, CUDA_R_16F, n,
+    //         hA2, CUDA_R_16F, n,
+    //         &zero,
+    //         A3,    CUDA_R_32F, n,
+    //         CUBLAS_COMPUTE_32F_FAST_16F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
 
-        /* Symmetrize A3 */
-        symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
+    //     /* Symmetrize A3 */
+    //     symmetrizeFloat(cublasH, A3, n, A2); // we use A2 as a workspace
 
-        /* Compute A = 1.5 * A - 0.5 * A3 */
-        // A = 1.5 * A
-        CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
-        // A = -0.5 * A3 + A
-        CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
+    //     /* Compute A = 1.5 * A - 0.5 * A3 */
+    //     // A = 1.5 * A
+    //     CHECK_CUBLAS( cublasSscal(cublasH, nn, &one_n_half, A, 1) );
+    //     // A = -0.5 * A3 + A
+    //     CHECK_CUBLAS( cublasSaxpy(cublasH, nn, &minus_half, A3, 1, A, 1) );
 
-        /* Symmetrize A */
-        symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
-    }
+    //     /* Symmetrize A */
+    //     symmetrizeFloat(cublasH, A, n, A2); // we use A2 as a workspace
+    // }
 
     add_identity(cublasH, A, n);
     // A = 0.5 * A

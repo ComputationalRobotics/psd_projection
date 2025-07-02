@@ -35,7 +35,7 @@ void haoyu_TF16(
     float half = 0.5f;
 
     // Iterative algorithm in float, printing after each iter
-    for (int iter = 1; iter <= 7; iter++) {
+    for (int iter = 1; iter <= 4; iter++) {
         // T1 = A_our * A_our
         convert_float_to_half4(dA_our, dT3_half, nn);
         CHECK_CUBLAS(cublasGemmEx(
