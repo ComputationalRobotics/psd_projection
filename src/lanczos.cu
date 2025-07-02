@@ -246,6 +246,7 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(V));
     CHECK_CUDA(cudaFree(V_old));
     CHECK_CUDA(cudaFree(d_alpha));
+    CHECK_CUDA(cudaFree(d_beta));
     CHECK_CUDA(cudaFree(q));
     CHECK_CUDA(cudaFree(w));
     CHECK_CUDA(cudaFree(w1));
