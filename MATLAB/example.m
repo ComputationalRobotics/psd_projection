@@ -1,9 +1,11 @@
 addpath("./build");
 
-A = rand(10, 10); % generate a random matrix
+A = rand(5000, 5000); % generate a random matrix
 A = A + A';  % make it symmetric
 
-A_psd = psd_projection_MATLAB(A, 'composite_TF16'); % our method
+disp("start! \n");
+A_psd = psd_projection_MATLAB(A, 'composite_FP32_emulated'); % our method
+disp("end! \n");
 
 % standard eigenvalue decomposition method
 [P, D] = eig(A);

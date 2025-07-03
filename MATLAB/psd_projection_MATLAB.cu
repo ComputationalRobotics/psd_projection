@@ -23,6 +23,7 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/composite_FP32.h"
+#include "psd_projection/composite_FP32_emulated.h"
 #include "psd_projection/composite_TF16.h"
 #include "psd_projection/haoyu_TF16.h"
 #include "psd_projection/lanczos.h"
@@ -91,6 +92,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     if (method == "haoyu_TF16" || method == "composite_TF16") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
+    else if (method == "composite_FP32_emulated") {
+        CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
+        CHECK_CUBLAS(cublasSetEmulationStrategy(cublasH, CUBLAS_EMULATION_STRATEGY_EAGER));
+    }
     
     // create the host matrix
     double *dA_psd;
@@ -113,6 +118,8 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         composite_TF16(cublasH, dA_psd, n);
     else if (method == "composite_FP32")
         composite_FP32(cublasH, dA_psd, n);
+    else if (method == "composite_FP32_emulated")
+        composite_FP32_emulated(cublasH, dA_psd, n);
     else if (method == "haoyu_TF16") {
         float* dA_psd_float;
         CHECK_CUDA(cudaMalloc(&dA_psd_float, n * n * sizeof(float)));
@@ -122,7 +129,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         CHECK_CUDA(cudaFree(dA_psd_float));
      }
     else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'haoyu_TF16'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_TF16'.");
         return;
     }
 
