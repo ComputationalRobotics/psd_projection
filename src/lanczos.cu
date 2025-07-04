@@ -200,9 +200,10 @@ void approximate_two_norm(
                                     d_work_eig, lwork_eig, devInfo));
 
     // retrieve the max eigenvalue and corresponding eigenvector
-    int idx_max;
-    CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
-    idx_max--; // convert to 0-based index
+    // int idx_max;
+    // CHECK_CUBLAS(cublasIdamax(cublasH, nb_iter, d_eigenvalues, 1, &idx_max));
+    // idx_max--; // convert to 0-based index
+    int idx_max = nb_iter - 1;
 
     double theta;
     CHECK_CUDA(cudaMemcpy(&theta, d_eigenvalues + idx_max, sizeof(double), D2H));
@@ -217,9 +218,9 @@ void approximate_two_norm(
 
     double *ry;
     CHECK_CUDA(cudaMalloc(&ry, n * sizeof(double)));
-    // ry = A * q
+    // ry = A * y
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_N, n, n,
-                                &one, A, n, q, 1,
+                                &one, A, n, y, 1,
                                 &zero, ry, 1));
     // w1 = At * ry
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
@@ -227,7 +228,7 @@ void approximate_two_norm(
                                 &zero, w1, 1));
     // ry = w1
     CHECK_CUBLAS(cublasDcopy(cublasH, n, ry, 1, w1, 1));
-    // hence ry = A^T * A * q
+    // hence ry = A^T * A * y
 
     // ry = ry - theta * y
     double minus_theta = -theta;
@@ -258,6 +259,8 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(y));
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
+
+    std::cout << "Upper bound: " << *up << std::endl;
 
     return;
 }
