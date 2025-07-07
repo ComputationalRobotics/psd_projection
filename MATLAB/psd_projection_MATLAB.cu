@@ -27,6 +27,7 @@
 #include "psd_projection/composite_TF16.h"
 #include "psd_projection/haoyu_TF16.h"
 #include "psd_projection/lanczos.h"
+#include "psd_projection/eig_FP64_psd.h"
 
 void get_dnmat_from_matlab(
     const mxArray* mx_dnmat,
@@ -89,7 +90,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    if (method == "haoyu_TF16" || method == "composite_TF16") {
+    if (method == "haoyu_TF16" || method == "composite_TF16" || method == "eig_FP64") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
     else if (method == "composite_FP32_emulated") {
@@ -102,39 +103,71 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     CHECK_CUDA(cudaMalloc(&dA_psd, n * n * sizeof(double)));
     CHECK_CUDA(cudaMemcpy(dA_psd, cpu_At_csc_vals.data(), n * n * sizeof(double), H2D));
 
-    // approximate the spectral norm
-    double lo, up;
-    approximate_two_norm(
-        cublasH, solverH, dA_psd, n, &lo, &up
-    );
-
-    // scale to have eigenvalues in [-1, 1]
-    const double scale = up > 0.0 ? up : 1.0;
-    const double inv_scale = 1.0/scale;
-    CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-
     // call the appropriate method
-    if (method == "composite_TF16")
+    if (method == "composite_TF16") {
+        // approximate the spectral norm
+        double lo, up;
+        approximate_two_norm(
+            cublasH, solverH, dA_psd, n, &lo, &up
+        );
+        // scale to have eigenvalues in [-1, 1]
+        const double scale = up > 0.0 ? up : 1.0;
+        const double inv_scale = 1.0/scale;
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
         composite_TF16(cublasH, dA_psd, n);
-    else if (method == "composite_FP32")
+        // unscale
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
+    } else if (method == "composite_FP32") {
+        // approximate the spectral norm
+        double lo, up;
+        approximate_two_norm(
+            cublasH, solverH, dA_psd, n, &lo, &up
+        );
+        // scale to have eigenvalues in [-1, 1]
+        const double scale = up > 0.0 ? up : 1.0;
+        const double inv_scale = 1.0/scale;
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
         composite_FP32(cublasH, dA_psd, n);
-    else if (method == "composite_FP32_emulated")
+        // unscale
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
+    } else if (method == "composite_FP32_emulated") {
+        // approximate the spectral norm
+        double lo, up;
+        approximate_two_norm(
+            cublasH, solverH, dA_psd, n, &lo, &up
+        );
+        // scale to have eigenvalues in [-1, 1]
+        const double scale = up > 0.0 ? up : 1.0;
+        const double inv_scale = 1.0/scale;
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
         composite_FP32_emulated(cublasH, dA_psd, n);
-    else if (method == "haoyu_TF16") {
+        // unscale
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
+    } else if (method == "haoyu_TF16") {
+        // approximate the spectral norm
+        double lo, up;
+        approximate_two_norm(
+            cublasH, solverH, dA_psd, n, &lo, &up
+        );
+        // scale to have eigenvalues in [-1, 1]
+        const double scale = up > 0.0 ? up : 1.0;
+        const double inv_scale = 1.0/scale;
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
         float* dA_psd_float;
         CHECK_CUDA(cudaMalloc(&dA_psd_float, n * n * sizeof(float)));
         convert_double_to_float(dA_psd, dA_psd_float, n * n);
         haoyu_TF16(cublasH, dA_psd_float, n);
         convert_float_to_double(dA_psd_float, dA_psd, n * n);
         CHECK_CUDA(cudaFree(dA_psd_float));
-     }
-    else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_TF16'.");
+        // unscale
+        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
+    } else if (method == "eig_FP64") {
+        eig_FP64_psd(solverH, cublasH, dA_psd, n);
+    } else {
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_TF16', 'eig_FP64'.");
         return;
     }
 
-    // unscale
-    CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
     CHECK_CUDA(cudaDeviceSynchronize());
 
     /* Output the result */

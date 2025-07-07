@@ -298,9 +298,9 @@ void approximate_two_norm(
     // up = sqrt(theta + norm(ry))
     double norm_ry;
     CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
-    printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
+    // printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
     *up = std::sqrt(theta + norm_ry);
-    printf("up: %5.4e \n", *up);
+    // printf("up: %5.4e \n", *up);
 
     /* Free memory */
     CHECK_CUDA(cudaFree(V));
@@ -319,7 +319,7 @@ void approximate_two_norm(
     CHECK_CUDA(cudaFree(ry));
     CHECK_CUDA(cudaDeviceSynchronize());
 
-    std::cout << "Upper bound: " << *up << std::endl;
+    // std::cout << "Upper bound: " << *up << std::endl;
 
     return;
 }
