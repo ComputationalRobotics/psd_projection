@@ -93,10 +93,12 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     if (method == "haoyu_TF16" || method == "composite_TF16" || method == "eig_FP64") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
+    #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
     else if (method == "composite_FP32_emulated") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
         CHECK_CUBLAS(cublasSetEmulationStrategy(cublasH, CUBLAS_EMULATION_STRATEGY_EAGER));
     }
+    #endif
     
     // create the host matrix
     double *dA_psd;
@@ -130,7 +132,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         composite_FP32(cublasH, dA_psd, n);
         // unscale
         CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
-    } else if (method == "composite_FP32_emulated") {
+    }
+    else if (method == "composite_FP32_emulated") {
+        #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
         // approximate the spectral norm
         double lo, up;
         approximate_two_norm(
@@ -143,7 +147,12 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         composite_FP32_emulated(cublasH, dA_psd, n);
         // unscale
         CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
-    } else if (method == "haoyu_TF16") {
+        #else
+        mexErrMsgTxt("composite_FP32_emulated is only supported with CUDA 12.9 or later.");
+        return;
+        #endif
+    }
+    else if (method == "haoyu_TF16") {
         // approximate the spectral norm
         double lo, up;
         approximate_two_norm(
