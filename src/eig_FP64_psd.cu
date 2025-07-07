@@ -74,7 +74,6 @@ void eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA
     CHECK_CUDA(cudaFree(dV));
     CHECK_CUDA(cudaFree(dWork_ev));
     CHECK_CUDA(cudaFree(dW));
-    CHECK_CUDA(cudaFree(dA));
     CHECK_CUDA(cudaFree(devInfo));
     CHECK_CUDA(cudaDeviceSynchronize());
 
