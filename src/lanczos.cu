@@ -6,10 +6,25 @@
 #include <cstdio>
 #include <limits>
 #include <algorithm>
+#include <random>
+#include <chrono>
 
 #include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
+
+unsigned long make_seed() {
+    std::random_device rd;
+
+    std::seed_seq seq{
+        rd(), rd(), rd(), rd(),
+        static_cast<unsigned>(std::chrono::high_resolution_clock::now()
+                              .time_since_epoch().count())   // mixes in time
+    };
+
+    std::mt19937_64 mixer(seq);   // 64-bit Mersenne Twister
+    return mixer();               // one well-mixed 64-bit value
+}
 
 __global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -68,11 +83,10 @@ void approximate_two_norm(
     const double one = 1.0;
     
     // storage
-    double *V, *V_old, *d_alpha, *q, *w, *w1;
+    double *V, *V_old, *q, *w, *w1;
     max_iter = min(max_iter, n);
     CHECK_CUDA(cudaMalloc(&V,     n * max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&V_old,            n * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&d_alpha,     max_iter * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&q,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w,                n * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&w1,               n * sizeof(double)));
@@ -84,7 +98,37 @@ void approximate_two_norm(
 
     /* Initial vector */
     // q = randn(n, 1)
-    fill_random(q, n, 0);
+    fill_random(q, n, make_seed());
+
+    // read from a txt file for debug
+    // std::ifstream q_file("q.txt");
+    // if (q_file.is_open()) {
+    //     std::vector<double> q_host(n);
+    //     for (size_t i = 0; i < n; ++i) {
+    //         q_file >> q_host[i];
+    //     }
+    //     q_file.close();
+    //     CHECK_CUDA(cudaMemcpy(q, q_host.data(), n * sizeof(double), cudaMemcpyHostToDevice));
+    // } else {
+    //     std::cerr << "Unable to open file q.txt for reading." << std::endl;
+    //     return;
+    // }
+
+    // // save q to a txt file with 17 decimal places
+    // std::vector<double> q_host(n);
+    // CHECK_CUDA(cudaMemcpy(q_host.data(), q, n * sizeof(double), cudaMemcpyDeviceToHost));
+
+    // if (n == 10000) {
+    //     std::ofstream q_file("q.txt");
+    //     if (q_file.is_open()) {
+    //         for (size_t i = 0; i < n; ++i) {
+    //             q_file << std::setprecision(17) << q_host[i] << "\n";
+    //         }
+    //         q_file.close();
+    //     } else {
+    //         std::cerr << "Unable to open file q.txt for writing." << std::endl;
+    //     }
+    // }
 
     // q = q / norm(q)
     double norm_q;
@@ -128,6 +172,8 @@ void approximate_two_norm(
         // beta(k) = norm(w)
         CHECK_CUBLAS(cublasDnrm2(cublasH, n, w, 1, &beta[k]));
 
+        // printf("alpha[k]: %5.4e, beta[k]: %5.4e \n", alpha[k], beta[k]);
+
         if (beta[k] <= tol * alpha[k] && k > 1)
             break;
             
@@ -161,7 +207,6 @@ void approximate_two_norm(
 
         CHECK_CUDA(cudaFree(V));
         CHECK_CUDA(cudaFree(V_old));
-        CHECK_CUDA(cudaFree(d_alpha));
         CHECK_CUDA(cudaFree(q));
         CHECK_CUDA(cudaFree(w));
         CHECK_CUDA(cudaFree(w1));
@@ -172,11 +217,12 @@ void approximate_two_norm(
 
     /* Tridiagonal T */
     // T = diag(alpha) + diag(beta(2:end),1) + diag(beta(2:end),-1);
-    double *T, *d_beta;
+    double *T, *d_alpha, *d_beta;
     CHECK_CUDA(cudaMalloc(&T,       nb_iter * nb_iter * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
-    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), (nb_iter - 1) * sizeof(double), H2D));
-    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
+    CHECK_CUDA(cudaMalloc(&d_beta,            nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&d_alpha,           nb_iter * sizeof(double)));
+    CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), nb_iter * sizeof(double), H2D));
+    CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  nb_iter * sizeof(double), H2D));
     fill_tridiagonal(
         T, d_alpha, d_beta, nb_iter
     );
@@ -198,6 +244,17 @@ void approximate_two_norm(
     CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                     nb_iter, T, nb_iter, d_eigenvalues,
                                     d_work_eig, lwork_eig, devInfo));
+
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    // print eigenvalues for debugging
+    // std::vector<double> eigenvalues(nb_iter);
+    // CHECK_CUDA(cudaMemcpy(eigenvalues.data(), d_eigenvalues, nb_iter * sizeof(double), cudaMemcpyDeviceToHost));
+    // std::cout << "Eigenvalues: ";
+    // for (const auto& ev : eigenvalues) {
+    //     std::cout << ev << "\n";
+    // }
+    // std::cout << std::endl;
 
     // retrieve the max eigenvalue and corresponding eigenvector
     // int idx_max;
@@ -241,7 +298,9 @@ void approximate_two_norm(
     // up = sqrt(theta + norm(ry))
     double norm_ry;
     CHECK_CUBLAS(cublasDnrm2(cublasH, n, ry, 1, &norm_ry));
+    printf("theta: %5.4e, norm_ry: %5.4e \n", theta, norm_ry);
     *up = std::sqrt(theta + norm_ry);
+    printf("up: %5.4e \n", *up);
 
     /* Free memory */
     CHECK_CUDA(cudaFree(V));
