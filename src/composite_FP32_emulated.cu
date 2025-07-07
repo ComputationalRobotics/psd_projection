@@ -1,3 +1,6 @@
+// this file is compatible with CUDA 12.9 and later
+#if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
+
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <chrono>
@@ -344,3 +347,5 @@ void composite_FP32_emulated_auto_scale_deflate(
     CHECK_CUDA( cudaFree(eigenvalues) );
     CHECK_CUDA( cudaFree(eigenvectors) );
 }
+
+#endif

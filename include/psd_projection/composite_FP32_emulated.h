@@ -1,6 +1,9 @@
 #ifndef PSD_PROJECTION_COMPOSITE_FP32_EMULATED_H
 #define PSD_PROJECTION_COMPOSITE_FP32_EMULATED_H
 
+// this file is compatible with CUDA 12.9 and later
+#if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
+
 #include <cublas_v2.h>
 
 /// @brief Projects a symmetric matrix to its positive semidefinite (PSD) form using FP32 precision. The matrix must be scaled such that its eigenvalues are in [-1, 1].
@@ -13,5 +16,7 @@ void composite_FP32_emulated(
     const int mat_size,
     const bool verbose = false
 );
+
+#endif // defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
 
 #endif // PSD_PROJECTION_COMPOSITE_FP32_EMULATED_H
