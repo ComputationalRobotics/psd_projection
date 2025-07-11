@@ -4,11 +4,11 @@
 #include <cuda_fp16.h>
 #include <cmath>
 
-#include "psd_projection/haoyu_TF16.h"
+#include "psd_projection/haoyu_FP16.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-void haoyu_TF16(
+void haoyu_FP16(
     cublasHandle_t cublasH,
     float* mat,
     const int n

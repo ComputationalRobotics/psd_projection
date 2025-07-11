@@ -24,8 +24,8 @@
 #include "psd_projection/utils.h"
 #include "psd_projection/composite_FP32.h"
 #include "psd_projection/composite_FP32_emulated.h"
-#include "psd_projection/composite_TF16.h"
-#include "psd_projection/haoyu_TF16.h"
+#include "psd_projection/composite_FP16.h"
+#include "psd_projection/haoyu_FP16.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/eig_FP64_psd.h"
 
@@ -90,7 +90,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    if (method == "haoyu_TF16" || method == "composite_TF16" || method == "eig_FP64") {
+    if (method == "haoyu_FP16" || method == "composite_FP16" || method == "eig_FP64") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
     #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
@@ -106,7 +106,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     CHECK_CUDA(cudaMemcpy(dA_psd, cpu_At_csc_vals.data(), n * n * sizeof(double), H2D));
 
     // call the appropriate method
-    if (method == "composite_TF16") {
+    if (method == "composite_FP16") {
         // approximate the spectral norm
         double lo, up;
         approximate_two_norm(
@@ -116,7 +116,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         const double scale = up > 0.0 ? up : 1.0;
         const double inv_scale = 1.0/scale;
         CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-        composite_TF16(cublasH, dA_psd, n);
+        composite_FP16(cublasH, dA_psd, n);
         // unscale
         CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
     } else if (method == "composite_FP32") {
@@ -152,7 +152,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         return;
         #endif
     }
-    else if (method == "haoyu_TF16") {
+    else if (method == "haoyu_FP16") {
         // approximate the spectral norm
         double lo, up;
         approximate_two_norm(
@@ -165,7 +165,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         float* dA_psd_float;
         CHECK_CUDA(cudaMalloc(&dA_psd_float, n * n * sizeof(float)));
         convert_double_to_float(dA_psd, dA_psd_float, n * n);
-        haoyu_TF16(cublasH, dA_psd_float, n);
+        haoyu_FP16(cublasH, dA_psd_float, n);
         convert_float_to_double(dA_psd_float, dA_psd, n * n);
         CHECK_CUDA(cudaFree(dA_psd_float));
         // unscale
@@ -173,7 +173,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     } else if (method == "eig_FP64") {
         eig_FP64_psd(solverH, cublasH, dA_psd, n);
     } else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_TF16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_TF16', 'eig_FP64'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_FP16', 'eig_FP64'.");
         return;
     }
 
