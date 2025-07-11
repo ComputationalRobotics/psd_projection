@@ -25,7 +25,7 @@ void composite_FP32_auto_scale(
     const int mat_size
 );
 
-/// @brief Projects a symmetric matrix to its positive semidefinite (PSD) form using FP32 precision. The matrix is automatically scaled to ensure its eigenvalues are in [-1, 1], and the largest eigenvalues are deflated to improve numerical stability.
+/// @brief WIP: Projects a symmetric matrix to its positive semidefinite (PSD) form using FP32 precision. The matrix is automatically scaled to ensure its eigenvalues are in [-1, 1], and the largest eigenvalues are deflated to improve numerical stability.
 /// @param cublasH a cuBLAS handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)

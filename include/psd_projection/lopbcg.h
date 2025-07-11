@@ -1,6 +1,7 @@
 #ifndef PSD_PROJECTION_LOPBCG_H
 #define PSD_PROJECTION_LOPBCG_H
 
+/// @brief WIP: LOPBCG algorithm
 void lopbcg(
     const double* A, // n x n, device pointer
     double* V,       // n x m, device pointer (output eigenvectors)

@@ -18,7 +18,7 @@ void approximate_two_norm(
     size_t max_iter = 20, double tol = 1e-10
 );
 
-/// @brief Compute the k largest eigenpairs of a symmetric matrix using the Lanczos method. It performs a two-step post-cleaning, dropping paris whose residual > tol and dropping host eigenvectors that lose orthogonality.
+/// @brief WIP: Compute the k largest eigenpairs of a symmetric matrix using the Lanczos method. It performs a two-step post-cleaning, dropping paris whose residual > tol and dropping host eigenvectors that lose orthogonality.
 /// @param cublasH cuBLAS handle
 /// @param cusolverH cuSOLVER handle
 /// @param A symmetric matrix of size n x n
