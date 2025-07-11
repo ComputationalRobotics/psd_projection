@@ -1,10 +1,8 @@
 #include <gtest/gtest.h>
 
 #include "composite_FP32_test.hpp"
-#include "composite_FP32_Lt_test.hpp"
 #include "lopbcg_test.hpp"
 #include "lanczos_test.hpp"
-#include "benchmarks.hpp"
 
 int main(int argc, char **argv)
 {

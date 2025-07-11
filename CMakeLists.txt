@@ -52,7 +52,7 @@ target_link_libraries(
     CUDA::cudart
     CUDA::cublas
     CUDA::cusolver
-    CUDA::cublasLt
+    # CUDA::cublasLt
 )
 
 install(
