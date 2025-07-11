@@ -38,6 +38,7 @@ Build the project using CMake:
 mkdir build
 cmake -S . -B build && cmake --build build
 ```
+This project has been tested with CMake 4.0 on Ubuntu, with CUDA 12.7 and 12.9.
 
 ### MATLAB interface
 We provide in the [`MATLAB`](MATLAB) directory a MATLAB interface to the library. It can be built using CMake:

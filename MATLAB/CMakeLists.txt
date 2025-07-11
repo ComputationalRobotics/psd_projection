@@ -1,11 +1,11 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.10)
 
 project(
     cuADMM_MATLAB
     LANGUAGES CXX CUDA
 )
 
-# find MATLAB, LAPACK, and BLAS
+# find MATLAB
 find_package(Matlab REQUIRED)
 
 set(TOP_SOURCE_NAME psd_projection_MATLAB.cu)
@@ -26,13 +26,14 @@ set(
 
 include_directories(${TARGET_NAME} PUBLIC ${INCLUDE_DIRS})
 
+add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>)
 matlab_add_mex(
     NAME ${TARGET_NAME}
     SRC ${MEX_SOURCES}
     OUTPUT_NAME ${TARGET_NAME}
     LINK_TO 
     ${Matlab_LIBRARIES} 
-    cublas cusolver 
+    cublas cusolver
     ${CMAD_LIB} ${CCOLAMD_LIB} ${CHOLMOD_LIB}
 )
 

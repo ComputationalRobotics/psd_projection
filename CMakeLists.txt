@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.10)
 
 project(
     psd_projection
@@ -40,6 +40,8 @@ file(
     src/*.cu
 )
 
+add_compile_options($<$<COMPILE_LANGUAGE:CUDA>:-Wno-deprecated-gpu-targets>)
+
 ### Create library
 add_library(${PSD_LIB} SHARED ${LIB_SOURCES})
 set_property(TARGET ${PSD_LIB} PROPERTY CUDA_ARCHITECTURES OFF)
@@ -48,13 +50,9 @@ target_link_libraries(
     ${PSD_LIB}
     PUBLIC
     CUDA::cudart
-    CUDA::cusparse
     CUDA::cublas
     CUDA::cusolver
     CUDA::cublasLt
-    ${CMAD_LIB}
-    ${CCOLAMD_LIB}
-    ${CHOLMOD_LIB}
 )
 
 install(
