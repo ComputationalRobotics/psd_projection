@@ -53,7 +53,7 @@ addpath('build');
 A = ...
 A_psd = psd_projection_MATLAB(A, 'composite_FP32');
 ```
-where the second argument specifies the method to use (the supported methods are `composite_FP16`, `composite_FP32`, `composite_FP32_emulated`, `haoyu_FP16`, `eig_FP64`.)
+where the second argument specifies the method to use (the supported methods are `composite_FP16`, `composite_FP32`, `composite_FP32_emulated`, `eig_FP64`.)
 A minimal working example is provided in [`MATLAB/example.m`](MATLAB/example.m).
 
 ### Testing

@@ -25,7 +25,6 @@
 #include "psd_projection/composite_FP32.h"
 #include "psd_projection/composite_FP32_emulated.h"
 #include "psd_projection/composite_FP16.h"
-#include "psd_projection/haoyu_FP16.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/eig_FP64_psd.h"
 
@@ -90,7 +89,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    if (method == "haoyu_FP16" || method == "composite_FP16" || method == "eig_FP64") {
+    if (method == "composite_FP16" || method == "eig_FP64") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
     #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
@@ -152,28 +151,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         return;
         #endif
     }
-    else if (method == "haoyu_FP16") {
-        // approximate the spectral norm
-        double lo, up;
-        approximate_two_norm(
-            cublasH, solverH, dA_psd, n, &lo, &up
-        );
-        // scale to have eigenvalues in [-1, 1]
-        const double scale = up > 0.0 ? up : 1.0;
-        const double inv_scale = 1.0/scale;
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-        float* dA_psd_float;
-        CHECK_CUDA(cudaMalloc(&dA_psd_float, n * n * sizeof(float)));
-        convert_double_to_float(dA_psd, dA_psd_float, n * n);
-        haoyu_FP16(cublasH, dA_psd_float, n);
-        convert_float_to_double(dA_psd_float, dA_psd, n * n);
-        CHECK_CUDA(cudaFree(dA_psd_float));
-        // unscale
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
-    } else if (method == "eig_FP64") {
+    else if (method == "eig_FP64") {
         eig_FP64_psd(solverH, cublasH, dA_psd, n);
     } else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated',  'haoyu_FP16', 'eig_FP64'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated', 'eig_FP64'.");
         return;
     }
 
