@@ -3,7 +3,7 @@ Implementation of different algorithms of projection onto the PSD cone.
 
 This library focuses on orthogonally projecting a symmetric matrix $X$ onto the Positive Semidefinite (PSD) cone, that is:
 ```math
-\Pi_{\mathbb{S}^n}(X) \;:=\; \text{argmin}_{Y \in \mathbb{S}^n} \,\frac{1}{2}\,\|Y - X\|_{\text{F}}^2,
+\Pi_{\mathbb{S}_+^n}(X) \;:=\; \text{argmin}_{Y \in \mathbb{S}_+^n} \,\frac{1}{2}\,\|Y - X\|_{\text{F}}^2,
 ```
 where $\mathbb{S}^n$ is the set of $n \times n$ symmetric matrices and $\|\cdot\|_{\text{F}}$ is the Frobenius norm.
 
@@ -17,7 +17,7 @@ X = Q \Lambda Q^\top,
 ```
 the projection can be computed as:
 ```math
-\Pi_{\mathbb{S}^n}(X) = Q \max(\Lambda, 0) Q^\top,
+\Pi_{\mathbb{S}_+^n}(X) = Q \max(\Lambda, 0) Q^\top,
 ```
 where $\max(\Lambda, 0)$ is the matrix obtained by replacing all negative eigenvalues in $\Lambda$ with zero.
 
