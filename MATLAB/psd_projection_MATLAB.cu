@@ -27,6 +27,7 @@
 #include "psd_projection/composite_FP16.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/eig_FP64_psd.h"
+#include "psd_projection/eig_FP32_psd.h"
 
 void get_dnmat_from_matlab(
     const mxArray* mx_dnmat,
@@ -89,7 +90,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    if (method == "composite_FP16" || method == "eig_FP64") {
+    if (method == "composite_FP16" || method == "eig_FP64" || method == "eig_FP32") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
     #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
@@ -153,8 +154,11 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     }
     else if (method == "eig_FP64") {
         eig_FP64_psd(solverH, cublasH, dA_psd, n);
+    }
+    else if (method == "eig_FP32") {
+        eig_FP32_psd(solverH, cublasH, dA_psd, n);
     } else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated', 'eig_FP64'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated', 'eig_FP64', and 'eig_FP32'.");
         return;
     }
 
