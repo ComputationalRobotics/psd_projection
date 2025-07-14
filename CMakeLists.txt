@@ -63,7 +63,7 @@ install(
 )
 
 # Option to control building tests
-option(PSD_PROJECTION_BUILD_TESTS "Build psd_projection tests" ON)
+option(PSD_PROJECTION_BUILD_TESTS "Build psd_projection tests" OFF)
 
 # Only build tests if enabled
 if(PSD_PROJECTION_BUILD_TESTS)

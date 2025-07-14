@@ -53,11 +53,11 @@ addpath('build');
 A = ...
 A_psd = psd_projection_MATLAB(A, 'composite_FP32');
 ```
-where the second argument specifies the method to use (the supported methods are `composite_FP16`, `composite_FP32`, `composite_FP32_emulated`, `eig_FP64`.)
+where the second argument specifies the method to use (the supported methods are `composite_FP16`, `composite_FP32`, `composite_FP32_emulated`, `eig_FP64` and `eig_FP32`.)
 A minimal working example is provided in [`MATLAB/example.m`](MATLAB/example.m).
 
 ### Testing
-After building, you can execute the unit tests:
+After building with the option `PSD_PROJECTION_BUILD_TESTS` in the CMake file, you can execute the unit tests:
 ```bash
 cd build && ctest
 ```
