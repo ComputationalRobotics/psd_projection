@@ -13,8 +13,7 @@
 void composite_FP32_emulated(
     cublasHandle_t cublasH,
     double* mat,
-    const int mat_size,
-    const bool verbose = false
+    const int mat_size
 );
 
 #endif // defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)

@@ -15,8 +15,7 @@
 void composite_FP32(
     cublasHandle_t cublasH,
     double* mat,
-    const int n,
-    const bool verbose
+    const int n
 ) {
     const int nn = n * n;
 
@@ -175,9 +174,7 @@ void composite_FP32_auto_scale(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     // project the matrix using the composite_FP32 function
-    composite_FP32(
-        cublasH, mat, n, 0
-    );
+    composite_FP32(cublasH, mat, n);
 
     // rescale the result back to the original scale
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );
@@ -202,7 +199,7 @@ void composite_FP32_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     double _ = compute_eigenpairs(
-        cublasH, solverH, mat, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol, verbose
+        cublasH, solverH, mat, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol
     );
 
     std::vector<double> eigenvalues_host(r);
@@ -227,9 +224,7 @@ void composite_FP32_auto_scale_deflate(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     /* Step 4: project the matrix using the composite_FP32 function */
-    composite_FP32(
-        cublasH, mat, n, verbose
-    );
+    composite_FP32(cublasH, mat, n);
 
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );

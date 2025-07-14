@@ -10,8 +10,7 @@
 void composite_FP32(
     cublasHandle_t cublasH,
     double* mat,
-    const int mat_size,
-    const bool verbose = false
+    const int mat_size
 );
 
 /// @brief Projects a symmetric matrix to its positive semidefinite (PSD) form using FP32 precision. The matrix is automatically scaled to ensure its eigenvalues are in [-1, 1].

@@ -18,8 +18,7 @@
 void composite_FP32_emulated(
     cublasHandle_t cublasH,
     double* mat,
-    const int n,
-    const bool verbose = false
+    const int n
 ) {
     const int nn = n * n;
 
@@ -271,7 +270,7 @@ void composite_FP32_emulated_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     double _ = compute_eigenpairs(
-        cublasH, solverH, mat, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol, verbose
+        cublasH, solverH, mat, n, k, &r, eigenvalues, eigenvectors, false, 0, tol, ortho_tol
     );
 
     std::vector<double> eigenvalues_host(r);

@@ -38,7 +38,7 @@ TEST(CompositeFP32, Deterministic)
     CHECK_CUDA(cudaMemcpy(dA, A.data(), nn*sizeof(double), cudaMemcpyHostToDevice));
 
     auto start = std::chrono::high_resolution_clock::now();
-    composite_FP32(cublasH, dA, n, 0);
+    composite_FP32(cublasH, dA, n);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "Time (composite): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
@@ -93,7 +93,7 @@ TEST(CompositeFP32, UniformScaled)
     generateAndProject(n, dA, dA_psd, solverH, cublasH); // cuSOLVER
 
     auto start = std::chrono::high_resolution_clock::now();
-    composite_FP32(cublasH, dA, n, 0);
+    composite_FP32(cublasH, dA, n);
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> elapsed = end - start;
     std::cout << "Time (composite): " << std::fixed << std::setprecision(6) << elapsed.count() << " seconds" << std::endl;
@@ -160,7 +160,7 @@ TEST(CompositeFP32, UniformNonScaled1024)
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, dA, 1) );
 
     /* Project */
-    composite_FP32(cublasH, dA, n, 0);
+    composite_FP32(cublasH, dA, n);
 
     // scale back dA to original range
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, dA, 1) );
