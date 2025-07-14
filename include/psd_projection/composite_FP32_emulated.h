@@ -1,6 +1,8 @@
 #ifndef PSD_PROJECTION_COMPOSITE_FP32_EMULATED_H
 #define PSD_PROJECTION_COMPOSITE_FP32_EMULATED_H
 
+#include "cuda.h"
+
 // this file is compatible with CUDA 12.9 and later
 #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
 

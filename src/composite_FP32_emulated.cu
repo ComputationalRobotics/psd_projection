@@ -1,3 +1,5 @@
+#include "cuda.h"
+
 // this file is compatible with CUDA 12.9 and later
 #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
 
@@ -243,9 +245,7 @@ void composite_FP32_emulated_auto_scale(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     // project the matrix using the composite_FP32 function
-    composite_FP32_emulated(
-        cublasH, mat, n, 0
-    );
+    composite_FP32_emulated(cublasH, mat, n);
 
     // rescale the result back to the original scale
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );
@@ -295,9 +295,7 @@ void composite_FP32_emulated_auto_scale_deflate(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     /* Step 4: project the matrix using the composite_FP32 function */
-    composite_FP32_emulated(
-        cublasH, mat, n, verbose
-    );
+    composite_FP32_emulated(cublasH, mat, n);
 
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
