@@ -1,7 +1,15 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
+#include <chrono>
+#include <cusolverDn.h>
+#include <cuda_fp16.h>
+#include <cmath>
+#include <vector>
+#include <iostream>
 
-#include "psd_projection/composite_FP16.h"
+#include "psd_projection/composite_FP32.h"
+#include "psd_projection/lanczos.h"
+#include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
 void composite_FP16(
@@ -215,4 +223,30 @@ void composite_FP16(
     CHECK_CUDA( cudaFree(hA) );
     CHECK_CUDA( cudaFree(hA2) );
     CHECK_CUDA( cudaFree(hA3) );
+}
+
+void composite_FP16_auto_scale(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t solverH,
+    double* mat,
+    const int n
+) {
+    size_t nn = n * n;
+    
+    // Use the Lanczos method to approximate the two-norm of the matrix
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, mat, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? up : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
+
+    // project the matrix using the composite_FP16 function
+    composite_FP16(cublasH, mat, n);
+
+    // rescale the result back to the original scale
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );
 }
