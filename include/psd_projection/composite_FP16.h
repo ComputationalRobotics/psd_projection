@@ -7,6 +7,8 @@
 /// @param cublasH a cuBLAS handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
+/// @param workspace optional workspace of size at least `3 * mat_size*mat_size` for intermediate computations; if not provided, a default workspace will be allocated
+/// @note This function assumes that the input matrix is already scaled such that its eigenvalues are in the range [-1, 1]. If the matrix is not scaled, the computation might diverge.
 void composite_FP16(
     cublasHandle_t cublasH,
     double* mat,
@@ -19,6 +21,7 @@ void composite_FP16(
 /// @param cublasH a cuBLAS handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
+/// @param workspace optional workspace of size at least `3 * mat_size*mat_size` for intermediate computations; if not provided, a default workspace will be allocated
 void composite_FP16_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
