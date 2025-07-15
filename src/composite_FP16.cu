@@ -15,21 +15,35 @@
 void composite_FP16(
     cublasHandle_t cublasH,
     double* mat,
-    const int n
+    const int n,
+    float* float_workspace,
+    __half* half_workspace
 ) {
     const int nn = n * n;
 
     /* Allocations */
     // device memory
     float *A, *A2, *A3;
-    CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
-    CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+    if (float_workspace == nullptr) {
+        CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
+        CHECK_CUDA( cudaMalloc(&A2, nn * sizeof(float)) );
+        CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
+    } else {
+        A = float_workspace;
+        A2 = float_workspace + nn;
+        A3 = float_workspace + 2 * nn;
+    }
 
     __half *hA, *hA2, *hA3;
-    CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
-    CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
-    CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
+    if (half_workspace == nullptr) {
+        CHECK_CUDA(cudaMalloc(&hA,  nn * sizeof(__half)));
+        CHECK_CUDA(cudaMalloc(&hA2, nn * sizeof(__half)));
+        CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
+    } else {
+        hA = half_workspace;
+        hA2 = half_workspace + nn;
+        hA3 = half_workspace + 2 * nn;
+    }
 
     // useful constants
     const float half       =  0.5f;
@@ -217,19 +231,25 @@ void composite_FP16(
     convert_float_to_double(A3, mat, nn);
 
     /* Free device memory */
-    CHECK_CUDA( cudaFree(A) );
-    CHECK_CUDA( cudaFree(A2) );
-    CHECK_CUDA( cudaFree(A3) );
-    CHECK_CUDA( cudaFree(hA) );
-    CHECK_CUDA( cudaFree(hA2) );
-    CHECK_CUDA( cudaFree(hA3) );
+    if (float_workspace == nullptr) {
+        CHECK_CUDA( cudaFree(A) );
+        CHECK_CUDA( cudaFree(A2) );
+        CHECK_CUDA( cudaFree(A3) );
+    }
+    if (half_workspace == nullptr) {
+        CHECK_CUDA( cudaFree(hA) );
+        CHECK_CUDA( cudaFree(hA2) );
+        CHECK_CUDA( cudaFree(hA3) );
+    }
 }
 
 void composite_FP16_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
-    const int n
+    const int n,
+    float* float_workspace = nullptr,
+    __half* half_workspace = nullptr
 ) {
     size_t nn = n * n;
     
@@ -245,7 +265,7 @@ void composite_FP16_auto_scale(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     // project the matrix using the composite_FP16 function
-    composite_FP16(cublasH, mat, n);
+    composite_FP16(cublasH, mat, n, float_workspace, half_workspace);
 
     // rescale the result back to the original scale
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );

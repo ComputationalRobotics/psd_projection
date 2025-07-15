@@ -10,7 +10,9 @@
 void composite_FP16(
     cublasHandle_t cublasH,
     double* mat,
-    const int n
+    const int n,
+    float* float_workspace = nullptr,
+    __half* half_workspace = nullptr
 );
 
 /// @brief Projects a symmetric matrix to its positive semidefinite (PSD) form using FP16 precision. The matrix is automatically scaled to ensure its eigenvalues are in [-1, 1].
@@ -21,7 +23,9 @@ void composite_FP16_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,
     double* mat,
-    const int mat_size
+    const int mat_size,
+    float* float_workspace = nullptr,
+    __half* half_workspace = nullptr
 );
 
 #endif // PSD_PROJECTION_COMPOSITE_FP16_H
