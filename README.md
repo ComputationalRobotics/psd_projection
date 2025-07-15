@@ -24,7 +24,7 @@ where $\max(\Lambda, 0)$ is the matrix obtained by replacing all negative eigenv
 This approach is implemented in double precision in [`src/eig_FP64_psd.cu`](src/eig_FP64_psd.cu), and uses CUDA's cuSOLVER library for efficient computation of the EVD.
 
 ### Factorization-free solution via polynomial filtering
-An alternative approach to compute the projection is to use polynomial filtering, which avoids the need for factorization. The matrix is rescaled by an upper bound of its spectral norm, and a polynomial approximation of the ReLU function is applied to its eigenvalues.
+An alternative approach to compute the projection is to use polynomial filtering, which avoids the need for factorization, as described in [the associated paper](https://arxiv.org/abs/2507.09165). The matrix is rescaled by an upper bound of its spectral norm, and a polynomial approximation of the ReLU function is applied to its eigenvalues.
 
 The upper bound is computed using [`lanczos.cu`](src/lanczos.cu), and composite polynomial filtering is implemented in [`src/composite_FP32.cu`](src/composite_FP32.cu), [`src/composite_FP16.cu`](src/composite_FP16.cu).
 
@@ -60,4 +60,18 @@ A minimal working example is provided in [`MATLAB/example.m`](MATLAB/example.m).
 After building with the option `PSD_PROJECTION_BUILD_TESTS` in the CMake file, you can execute the unit tests:
 ```bash
 cd build && ctest
+```
+
+## Citing
+To cite the method, or if you used this library in your work, please use the following BibTeX entry:
+```bibtex
+@misc{kang2025psdprojection,
+    title={Factorization-free Orthogonal Projection onto the Positive Semidefinite Cone with Composite Polynomial Filtering}, 
+    author={Shucheng Kang and Haoyu Han and Antoine Groudiev and Heng Yang},
+    year={2025},
+    eprint={2507.09165},
+    archivePrefix={arXiv},
+    primaryClass={math.OC},
+    url={https://arxiv.org/abs/2507.09165}
+}
 ```
