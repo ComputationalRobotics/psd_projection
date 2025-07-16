@@ -21,7 +21,8 @@ void composite_FP16(
 /// @param cublasH a cuBLAS handle
 /// @param mat the matrix to be projected, stored in column-major order
 /// @param mat_size the size of the matrix (assumed to be square, i.e., mat_size x mat_size)
-/// @param workspace optional workspace of size at least `3 * mat_size*mat_size` for intermediate computations; if not provided, a default workspace will be allocated
+/// @param workspace optional workspace of size at least `3 * mat_size*mat_size` for intermediate computations; if not provided, a default workspace will be allocated. See the note below for details regarding alignment.
+/// @note If `mat_size*mat_size` is not a multiple of 4, the workspace will be padded to the next multiple of 4 for alignment. The size of the workspace should be sized accordingly.
 void composite_FP16_auto_scale(
     cublasHandle_t cublasH,
     cusolverDnHandle_t solverH,

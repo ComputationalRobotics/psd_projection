@@ -7,6 +7,7 @@
 #include <vector>
 #include <iostream>
 
+#include "psd_projection/composite_FP16.h"
 #include "psd_projection/composite_FP32.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/check.h"
@@ -23,6 +24,7 @@ void composite_FP16(
 
     /* Allocations */
     // device memory
+    int stride = nn % 4 == 0 ? nn : nn + (4 - nn % 4);
     float *A, *A2, *A3;
     if (float_workspace == nullptr) {
         CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );
@@ -30,8 +32,8 @@ void composite_FP16(
         CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
     } else {
         A = float_workspace;
-        A2 = float_workspace + nn;
-        A3 = float_workspace + 2 * nn;
+        A2 = float_workspace + stride;
+        A3 = float_workspace + 2 * stride;
     }
 
     __half *hA, *hA2, *hA3;
@@ -41,8 +43,8 @@ void composite_FP16(
         CHECK_CUDA(cudaMalloc(&hA3, nn * sizeof(__half)));
     } else {
         hA = half_workspace;
-        hA2 = half_workspace + nn;
-        hA3 = half_workspace + 2 * nn;
+        hA2 = half_workspace + stride;
+        hA3 = half_workspace + 2 * stride;
     }
 
     // useful constants
@@ -248,8 +250,8 @@ void composite_FP16_auto_scale(
     cusolverDnHandle_t solverH,
     double* mat,
     const int n,
-    float* float_workspace = nullptr,
-    __half* half_workspace = nullptr
+    float* float_workspace,
+    __half* half_workspace
 ) {
     size_t nn = n * n;
     
