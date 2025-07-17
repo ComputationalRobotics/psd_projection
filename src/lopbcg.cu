@@ -9,6 +9,36 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
+__global__ void reverse_vector_kernel(const double* in, double* out, int m) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < m) {
+        out[idx] = in[m - 1 - idx];
+    }
+}
+
+void reverse_vector(const double* in, double* out, int m) {
+    int threads = 1024;
+    int blocks = (m + threads - 1) / threads;
+    reverse_vector_kernel<<<blocks, threads>>>(in, out, m);
+    CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void reverse_columns_kernel(const double* in, double* out, int n, int m) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < n && col < m) {
+        // Copy column col to column (m - 1 - col)
+        out[row + (m - 1 - col) * n] = in[row + col * n];
+    }
+}
+
+void reverse_columns(const double* in, double* out, int n, int m) {
+    dim3 threads(32, 32);
+    dim3 blocks((n + threads.x - 1) / threads.x, (m + threads.y - 1) / threads.y);
+    reverse_columns_kernel<<<blocks, threads>>>(in, out, n, m);
+    CHECK_CUDA(cudaGetLastError());
+}
+
 void lopbcg(
     const double* A, // n x n, device pointer
     double* V,       // n x m, device pointer (output eigenvectors)
@@ -31,10 +61,12 @@ void lopbcg(
     CHECK_CUSOLVER(cusolverDnCreate(&cusolverH));
 
     // allocate the device memory
-    double *X_k, *Lam_k, *T, *Tt, *Delta_X_k, *T_tmp, *R_k;
+    double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Tt, *Delta_X_k, *T_tmp, *R_k;
     double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *Tt_XRD, *T_tmp_XRD;
     CHECK_CUDA(cudaMalloc(&X_k,            n * m * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&X_k_tmp,        n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&Lam_k,              m * sizeof(double)));
+    CHECK_CUDA(cudaMalloc(&Lam_k_tmp,          m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&Delta_X_k,      n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T_tmp,          n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T,              m * m * sizeof(double)));
@@ -87,11 +119,14 @@ void lopbcg(
 
     /* Initialization of X_k */
     // initialize X_k with random values on host
-    std::vector<double> h_Xk(n * m);
-    for (int i = 0; i < n * m; ++i) {
-        h_Xk[i] = 2.0 * (static_cast<double>(rand()) / RAND_MAX) - 1.0; // uniform on [-1, 1)
-    }
-    CHECK_CUDA(cudaMemcpy(X_k, h_Xk.data(), n * m * sizeof(double), H2D));
+    // std::vector<double> h_Xk(n * m);
+    // for (int i = 0; i < n * m; ++i) {
+    //     h_Xk[i] = 2.0 * (static_cast<double>(rand()) / RAND_MAX) - 1.0; // uniform on [-1, 1)
+    // }
+    // CHECK_CUDA(cudaMemcpy(X_k, h_Xk.data(), n * m * sizeof(double), H2D));
+
+    // initialize X_k at zero
+    CHECK_CUDA(cudaMemset(X_k, 0, n * m * sizeof(double)));
 
     // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
     CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
@@ -121,7 +156,9 @@ void lopbcg(
     // compute eigenvalues and eigenvectors of T
     // both are in increasing order
     CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
-                                    m, T, m, Lam_k, d_work_eig, lwork_eig, devInfo));
+                                    m, T, m, Lam_k_tmp, d_work_eig, lwork_eig, devInfo));
+    // reverse Lam_k_tmp to get Lam_k in decreasing order
+    reverse_vector(Lam_k_tmp, Lam_k, m);
 
     // X_k = Q * T
     CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
@@ -133,12 +170,20 @@ void lopbcg(
 
     for (int iter = 1; iter <= maxiter; iter++) {
         // R_k = A * X_k - X_k * Lam_k
-        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
+        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_T, n, m, m,
                                  &one, A, n, X_k, n,
                                  &zero, R_k, n));
-        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
-                                 &neg1, X_k, n, Lam_k, m,
-                                 &one, R_k, n));
+        // printMatrixDouble(R_k, n, m); // print R_k after first multiplication
+        CHECK_CUBLAS(cublasDdgmm(
+            cublasH,
+            CUBLAS_SIDE_RIGHT, // scale columns
+            n,                 // number of rows
+            m,                 // number of columns
+            X_k, n,            // input matrix
+            Lam_k, 1,         // vector (stride 1)
+            X_k_tmp, n       // output matrix
+        ));
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
         CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
 
@@ -170,7 +215,7 @@ void lopbcg(
                                 &zero, T_tmp_XRD, 3*m));
         // T = T_tmp * Q
         CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, 3*m, 3*m, n,
-                                &one, T_tmp_XRD, 3*m, X_k, n,
+                                &one, T_tmp_XRD, 3*m, XRD, n,
                                 &zero, T_XRD, 3*m));
         // copy T to Tt
         CHECK_CUBLAS(cublasDcopy(cublasH, 3*m * 3*m, T_XRD, 1, Tt_XRD, 1));
@@ -203,19 +248,29 @@ void lopbcg(
         // CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all, 2*m, Lam_k, 1));
 
         // Delta_X_k = XRD_tmp(:, 2m:3m) - X_k
-        for (int i = 0; i < m; ++i) {
-            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, Delta_X_k + i*n, 1));
-            CHECK_CUBLAS(cublasDaxpy(cublasH, n, &neg1, X_k + i*n, 1, Delta_X_k + i*n, 1));
-        }
+        // for (int i = 0; i < m; ++i) {
+        //     CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, Delta_X_k + i*n, 1));
+        //     CHECK_CUBLAS(cublasDaxpy(cublasH, n, &neg1, X_k + i*n, 1, Delta_X_k + i*n, 1));
+        // }
+
+        // Delta_X_k = - X_k
+        CHECK_CUBLAS(cublasDcopy(cublasH, n * m, X_k, 1, Delta_X_k, 1));
+        CHECK_CUBLAS(cublasDscal(cublasH, n * m, &neg1, Delta_X_k, 1));
 
         // X_k = XRD_tmp(2m:3m)
         for (int i = 0; i < m; ++i) {
             // X_k(:,i) = XRD_tmp(:,2*m+i)
-            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, X_k + i*n, 1));
+            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, X_k_tmp + i*n, 1));
         }
+        // reverse columns of X_k
+        reverse_columns(X_k_tmp, X_k, n, m);
+
+        // Delta = X_kp1 - X_k
+        CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &one, X_k, 1, Delta_X_k, 1));
         
         // Lam_k = Lam_all(2m:3m)
-        CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all + 2*m, 1, Lam_k, 1));
+        CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all + 2*m, 1, Lam_k_tmp, 1));
+        reverse_vector(Lam_k_tmp, Lam_k, m);
     }
 
     /* Copy results to output */
@@ -227,7 +282,9 @@ void lopbcg(
 
     // Free device memory
     CHECK_CUDA(cudaFree(X_k));
+    CHECK_CUDA(cudaFree(X_k_tmp));
     CHECK_CUDA(cudaFree(Lam_k));
+    CHECK_CUDA(cudaFree(Lam_k_tmp));
     CHECK_CUDA(cudaFree(d_work));
     CHECK_CUDA(cudaFree(tau));
     CHECK_CUDA(cudaFree(d_work_xrd));
