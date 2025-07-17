@@ -6,6 +6,7 @@
 #include <vector>
 #include "psd_projection/check.h"
 #include <cublas_v2.h>
+#include <curand_kernel.h>
 
 #define D2H cudaMemcpyDeviceToHost
 #define H2D cudaMemcpyHostToDevice
@@ -141,5 +142,15 @@ void identity_plus(
     float* A_out, // device pointer to matrix A
     const int n
 );
+
+__global__ void fill_random_kernel(double* vec, int n, unsigned long seed);
+
+/// @brief Fills a vector with random floats in (0,1] using the CUDA random number generator.
+/// @param vec Device pointer to the vector to fill
+/// @param n Size of the vector
+/// @param seed Seed for the random number generator
+void fill_random(double* vec, int n, unsigned long seed = 0, const int threadsPerBlock = 1024);
+
+unsigned long make_seed();
 
 #endif // PSD_PROJECTION_UTILS_H

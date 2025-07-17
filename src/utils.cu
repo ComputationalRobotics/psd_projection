@@ -1,6 +1,8 @@
 #include "psd_projection/utils.h"
 #include "psd_projection/check.h"
 #include <cublas_v2.h>
+#include <random>
+#include <chrono>
 
 void symmetrizeFloat(
     cublasHandle_t cublasH, float* M, int n, float* workspace
@@ -181,4 +183,36 @@ void identity_plus(
     // Launch kernel to compute I + A
     identity_plus_kernel<<<blocks, threads>>>(A_in, A_out, n);
     CHECK_CUDA(cudaGetLastError());
+}
+
+unsigned long make_seed() {
+    std::random_device rd;
+
+    std::seed_seq seq{
+        rd(), rd(), rd(), rd(),
+        static_cast<unsigned>(std::chrono::high_resolution_clock::now()
+                              .time_since_epoch().count())   // mixes in time
+    };
+
+    std::mt19937_64 mixer(seq);   // 64-bit Mersenne Twister
+    return mixer();               // one well-mixed 64-bit value
+}
+
+__global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) {
+        curandState state;
+        curand_init(seed, idx, 0, &state);
+        vec[idx] = curand_uniform_double(&state); // random double in (0,1]
+    }
+}
+
+void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock) {
+    int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
+    fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
+    cudaError_t err = cudaGetLastError();
+    if (err != cudaSuccess) {
+        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
+        exit(EXIT_FAILURE);
+    }
 }

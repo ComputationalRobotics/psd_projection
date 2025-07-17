@@ -118,15 +118,7 @@ void lopbcg(
     const double neg1 = -1.0;
 
     /* Initialization of X_k */
-    // initialize X_k with random values on host
-    // std::vector<double> h_Xk(n * m);
-    // for (int i = 0; i < n * m; ++i) {
-    //     h_Xk[i] = 2.0 * (static_cast<double>(rand()) / RAND_MAX) - 1.0; // uniform on [-1, 1)
-    // }
-    // CHECK_CUDA(cudaMemcpy(X_k, h_Xk.data(), n * m * sizeof(double), H2D));
-
-    // initialize X_k at zero
-    CHECK_CUDA(cudaMemset(X_k, 0, n * m * sizeof(double)));
+    fill_random(X_k, n * m, make_seed());
 
     // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
     CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));

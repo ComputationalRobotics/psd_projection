@@ -1,8 +1,6 @@
 #ifndef PSD_PROJECTION_LANCZOS_H
 #define PSD_PROJECTION_LANCZOS_H
 
-#include <curand_kernel.h>
-
 /// @brief Approximates the two-norm of a symmetric matrix using the Lanczos method.
 /// @param A Dense square matrix stored on device
 /// @param n Size of the matrix (n x n)
@@ -43,13 +41,5 @@ double compute_eigenpairs(
     const size_t max_iter = 0, const double tol = 1e-10, const double ortho_tol = 1e-5,
     const bool verbose = false
 );
-
-__global__ void fill_random_kernel(double* vec, int n, unsigned long seed);
-
-/// @brief Fills a vector with random floats in (0,1] using the CUDA random number generator.
-/// @param vec Device pointer to the vector to fill
-/// @param n Size of the vector
-/// @param seed Seed for the random number generator
-void fill_random(double* vec, int n, unsigned long seed = 0, const int threadsPerBlock = 1024);
 
 #endif // PSD_PROJECTION_LANCZOS_H
