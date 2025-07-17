@@ -170,10 +170,10 @@ void lopbcg(
 
     for (int iter = 1; iter <= maxiter; iter++) {
         // R_k = A * X_k - X_k * Lam_k
-        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_T, n, m, m,
+        CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, n,
                                  &one, A, n, X_k, n,
                                  &zero, R_k, n));
-        // printMatrixDouble(R_k, n, m); // print R_k after first multiplication
+        // scale X_k by Lam_k
         CHECK_CUBLAS(cublasDdgmm(
             cublasH,
             CUBLAS_SIDE_RIGHT, // scale columns
@@ -183,6 +183,7 @@ void lopbcg(
             Lam_k, 1,         // vector (stride 1)
             X_k_tmp, n       // output matrix
         ));
+        // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
         CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
@@ -230,40 +231,22 @@ void lopbcg(
         // both are in increasing order
         CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                         3*m, T_XRD, 3*m, Lam_all, d_work_eig_XRD, lwork_eig_XRD, devInfo));
+        // reverse columns of T_XRD
+        reverse_columns(T_XRD, T_tmp_XRD, 3*m, 3*m);
 
         // XRD_tmp = Q * T
         CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, 3*m, 3*m,
-                                &one, XRD, n, T_XRD, 3*m,
+                                &one, XRD, n, T_tmp_XRD, 3*m,
                                 &zero, XRD_tmp, n));
-        
-
-        // // Delta_X_k = XRD_tmp(:, 2m:3m) - X_k
-        // CHECK_CUBLAS(cublasDcopy(cublasH, n * m, XRD_tmp + 2*m * n, 1, Delta_X_k, 1));
-        // CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k + 2*m * n, 1, Delta_X_k, 1));
-
-        // // X_k = XRD_tmp(2m:3m)
-        // CHECK_CUBLAS(cublasDcopy(cublasH, n * m, XRD_tmp + 2*m * n, 1, X_k, 1));
-        
-        // // Lam_k = Lam_all(2m:3m)
-        // CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all, 2*m, Lam_k, 1));
-
-        // Delta_X_k = XRD_tmp(:, 2m:3m) - X_k
-        // for (int i = 0; i < m; ++i) {
-        //     CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, Delta_X_k + i*n, 1));
-        //     CHECK_CUBLAS(cublasDaxpy(cublasH, n, &neg1, X_k + i*n, 1, Delta_X_k + i*n, 1));
-        // }
 
         // Delta_X_k = - X_k
         CHECK_CUBLAS(cublasDcopy(cublasH, n * m, X_k, 1, Delta_X_k, 1));
         CHECK_CUBLAS(cublasDscal(cublasH, n * m, &neg1, Delta_X_k, 1));
 
-        // X_k = XRD_tmp(2m:3m)
+        // X_k = XRD_tmp(1:m)
         for (int i = 0; i < m; ++i) {
-            // X_k(:,i) = XRD_tmp(:,2*m+i)
-            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + (2*m + i)*n, 1, X_k_tmp + i*n, 1));
+            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + i*n, 1, X_k + i*n, 1));
         }
-        // reverse columns of X_k
-        reverse_columns(X_k_tmp, X_k, n, m);
 
         // Delta = X_kp1 - X_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &one, X_k, 1, Delta_X_k, 1));

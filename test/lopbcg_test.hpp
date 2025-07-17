@@ -8,8 +8,6 @@
 
 TEST(LOPBCG, Simple)
 {
-    GTEST_SKIP(); // TODO: not working yet, need to fix the LOPBCG implementation
-
     size_t n = 6;
     size_t m = 2; // number of eigenpairs to compute
     size_t nn = n * n;
@@ -33,19 +31,13 @@ TEST(LOPBCG, Simple)
 
     // run the LOPBCG algorithm
     lopbcg(A, V, D, n, m, 100, 1e-8, true);
-    
-    std::cout << "V:" << std::endl;
-    printMatrixDouble(V, n, m); // print the computed eigenvectors V
-
-    std::cout << "D:" << std::endl;
-    printMatrixDouble(D, m, 1); // print the computed eigenvalues D
 
     // check if the eigenvalues are close to the expected values
     std::vector<double> expected_eigenvalues = {7.3191, 5.6639}; // expected eigenvalues for this matrix
     std::vector<double> h_D(m);
     CHECK_CUDA(cudaMemcpy(h_D.data(), D, m * sizeof(double), cudaMemcpyDeviceToHost));
     for (size_t i = 0; i < m; ++i) {
-        EXPECT_NEAR(h_D[i], expected_eigenvalues[i], 1e-5) << "Eigenvalue mismatch at index " << i;
+        EXPECT_NEAR(h_D[i], expected_eigenvalues[i], 1e-4);
     }
 
     // cleanup
