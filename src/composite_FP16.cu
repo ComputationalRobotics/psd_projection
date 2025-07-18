@@ -10,8 +10,33 @@
 #include "psd_projection/composite_FP16.h"
 #include "psd_projection/composite_FP32.h"
 #include "psd_projection/lanczos.h"
+#include "psd_projection/lopbcg.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
+
+__global__ void negate_array_kernel(double* arr, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) arr[idx] = -arr[idx];
+}
+
+void negate_array(double* arr, int n) {
+    int blockSize = 1024;
+    int numBlocks = (n + blockSize - 1) / blockSize;
+    negate_array_kernel<<<numBlocks, blockSize>>>(arr, n);
+    CHECK_CUDA(cudaGetLastError());
+}
+
+__global__ void relu_eigenvalues_kernel(double* arr, int n) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < n) arr[idx] = fmaxf(0.0, -arr[idx]); // minus since we negated the eigenvalues before
+}
+
+void relu_eigenvalues(double* arr, int n) {
+    int blockSize = 1024;
+    int numBlocks = (n + blockSize - 1) / blockSize;
+    relu_eigenvalues_kernel<<<numBlocks, blockSize>>>(arr, n);
+    CHECK_CUDA(cudaGetLastError());
+}
 
 void composite_FP16(
     cublasHandle_t cublasH,
@@ -271,4 +296,74 @@ void composite_FP16_auto_scale(
 
     // rescale the result back to the original scale
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale,  mat, 1) );
+}
+
+void composite_FP16_auto_scale_deflate(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t solverH,
+    double* mat,
+    const int n,
+    float* float_workspace,
+    __half* half_workspace,
+    const size_t k,
+    const int maxiter,
+    const double tol,
+    const bool verbose
+) {
+    size_t nn = n * n;
+    
+    /* Step 1: compute the largest eigenpairs of the matrix */
+    // TODO: use a workspace for the eigenvalues and eigenvectors
+    double *eigenvalues, *eigenvectors;
+    CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
+
+    lopbcg(
+        mat, eigenvectors, eigenvalues, n, k, maxiter, tol, verbose
+    );
+
+    negate_array(eigenvalues, k);
+
+    /* Step 2: remove the largest eigenvalues from the matrix */
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
+    for (int i = 0; i < k; i++) {
+        // X <- X - \lambda_i * v_i v_i^T
+        // double lambda = -eigenvalues_host[i];
+        double *v_i = eigenvectors + i * n;
+        double *m_lambda_i = eigenvalues + i;
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
+    }
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
+
+    /* Step 3: scale the deflated matrix */
+    double lo, up;
+    approximate_two_norm(
+        cublasH, solverH, mat, n, &lo, &up
+    );
+
+    // scale to have eigenvalues in [-1, 1]
+    const double scale = up > 0.0 ? 1.1 * up + 1e-5 : 1.0;
+    const double inv_scale = 1.0/scale;
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
+
+    /* Step 4: project the matrix using the composite_FP16 function */
+    composite_FP16(cublasH, mat, n);
+
+    /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
+    CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
+
+
+    relu_eigenvalues(eigenvalues, k);
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
+    for (int i = 0; i < k; i++) {
+        // X <- X + \lambda_i * v_i v_i^T
+        double *m_lambda_i = eigenvalues + i;
+        double *v_i = eigenvectors + i * n;
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
+    }
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
+
+    /* Free device memory */
+    CHECK_CUDA( cudaFree(eigenvalues) );
+    CHECK_CUDA( cudaFree(eigenvectors) );
 }
