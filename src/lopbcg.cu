@@ -271,7 +271,4 @@ void lopbcg(
     CHECK_CUDA(cudaFree(T_XRD));
     CHECK_CUDA(cudaFree(XRD_tmp));
     CHECK_CUDA(cudaFree(d_work_eig_XRD));
-
-    CHECK_CUBLAS(cublasDestroy(cublasH));
-    CHECK_CUSOLVER(cusolverDnDestroy(cusolverH));
 }

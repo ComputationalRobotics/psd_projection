@@ -49,4 +49,6 @@ TEST(LOPBCG, Simple)
     CHECK_CUDA(cudaFree(A));
     CHECK_CUDA(cudaFree(V));
     CHECK_CUDA(cudaFree(D));
+    CHECK_CUBLAS(cublasDestroy(cublasH));
+    CHECK_CUSOLVER(cusolverDnDestroy(solverH));
 }
