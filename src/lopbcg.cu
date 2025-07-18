@@ -61,8 +61,8 @@ void lopbcg(
     CHECK_CUSOLVER(cusolverDnCreate(&cusolverH));
 
     // allocate the device memory
-    double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Tt, *Delta_X_k, *T_tmp, *R_k;
-    double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *Tt_XRD, *T_tmp_XRD;
+    double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Delta_X_k, *T_tmp, *R_k;
+    double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *T_tmp_XRD;
     CHECK_CUDA(cudaMalloc(&X_k,            n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&X_k_tmp,        n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&Lam_k,              m * sizeof(double)));
@@ -70,13 +70,11 @@ void lopbcg(
     CHECK_CUDA(cudaMalloc(&Delta_X_k,      n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T_tmp,          n * m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T,              m * m * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&Tt,             m * m * sizeof(double)));
     
     CHECK_CUDA(cudaMalloc(&XRD,          n * 3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&Lam_all,          3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&XRD_tmp,      n * 3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T_XRD,      3*m * 3*m * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&Tt_XRD,     3*m * 3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&T_tmp_XRD,    n * 3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&R_k,          n * 3*m * sizeof(double)));
 
@@ -136,13 +134,13 @@ void lopbcg(
     CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, m, m, n,
                              &one, T_tmp, m, X_k, n,
                              &zero, T, m));
-    // copy T to Tt
-    CHECK_CUBLAS(cublasDcopy(cublasH, m * m, T, 1, Tt, 1));
+    // copy T to T_tmp
+    CHECK_CUBLAS(cublasDcopy(cublasH, m * m, T, 1, T_tmp, 1));
 
     // T = 0.5 * (T + T^T)
     CHECK_CUBLAS(cublasDgeam(cublasH, CUBLAS_OP_N, CUBLAS_OP_T, m, m,
                              &half, T, m,
-                             &half, Tt, m,
+                             &half, T_tmp, m,
                              T, m));
 
     // compute eigenvalues and eigenvectors of T
@@ -210,13 +208,13 @@ void lopbcg(
         CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, 3*m, 3*m, n,
                                 &one, T_tmp_XRD, 3*m, XRD, n,
                                 &zero, T_XRD, 3*m));
-        // copy T to Tt
-        CHECK_CUBLAS(cublasDcopy(cublasH, 3*m * 3*m, T_XRD, 1, Tt_XRD, 1));
+        // copy T to T_tmp
+        CHECK_CUBLAS(cublasDcopy(cublasH, 3*m * 3*m, T_XRD, 1, T_tmp_XRD, 1));
 
         // T = 0.5 * (T + T^T)
         CHECK_CUBLAS(cublasDgeam(cublasH, CUBLAS_OP_N, CUBLAS_OP_T, 3*m, 3*m,
                                 &half, T_XRD, 3*m,
-                                &half, Tt_XRD, 3*m,
+                                &half, T_tmp_XRD, 3*m,
                                 T_XRD, 3*m));
 
         // compute eigenvalues and eigenvectors of T
@@ -269,14 +267,12 @@ void lopbcg(
     CHECK_CUDA(cudaFree(d_work_eig));
     CHECK_CUDA(cudaFree(devInfo));
     CHECK_CUDA(cudaFree(T));
-    CHECK_CUDA(cudaFree(Tt));
     CHECK_CUDA(cudaFree(Delta_X_k));
     CHECK_CUDA(cudaFree(R_k));
     
     CHECK_CUDA(cudaFree(XRD));
     CHECK_CUDA(cudaFree(Lam_all));
     CHECK_CUDA(cudaFree(T_XRD));
-    CHECK_CUDA(cudaFree(Tt_XRD));
     CHECK_CUDA(cudaFree(XRD_tmp));
     CHECK_CUDA(cudaFree(d_work_eig_XRD));
 
