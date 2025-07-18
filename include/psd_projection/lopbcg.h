@@ -3,6 +3,8 @@
 
 /// @brief WIP: LOPBCG algorithm
 void lopbcg(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
     const double* A, // n x n, device pointer
     double* V,       // n x m, device pointer (output eigenvectors)
     double* D,       // m x m, device pointer (output eigenvalues, diagonal)

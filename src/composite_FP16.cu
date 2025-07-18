@@ -319,7 +319,7 @@ void composite_FP16_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
 
     lopbcg(
-        mat, eigenvectors, eigenvalues, n, k, maxiter, tol, verbose
+        cublasH, solverH, mat, eigenvectors, eigenvalues, n, k, maxiter, tol, verbose
     );
 
     negate_array(eigenvalues, k);

@@ -29,8 +29,13 @@ TEST(LOPBCG, Simple)
     };
     CHECK_CUDA(cudaMemcpy(A, h_A.data(), nn * sizeof(double), cudaMemcpyHostToDevice));
 
+    cublasHandle_t cublasH;
+    cusolverDnHandle_t solverH;
+    CHECK_CUBLAS(cublasCreate(&cublasH));
+    CHECK_CUSOLVER(cusolverDnCreate(&solverH));
+
     // run the LOPBCG algorithm
-    lopbcg(A, V, D, n, m, 100, 1e-8, true);
+    lopbcg(cublasH, solverH, A, V, D, n, m, 100, 1e-8, true);
 
     // check if the eigenvalues are close to the expected values
     std::vector<double> expected_eigenvalues = {7.3191, 5.6639}; // expected eigenvalues for this matrix

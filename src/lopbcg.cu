@@ -40,6 +40,8 @@ void reverse_columns(const double* in, double* out, int n, int m) {
 }
 
 void lopbcg(
+    cublasHandle_t cublasH,
+    cusolverDnHandle_t cusolverH,
     const double* A, // n x n, device pointer
     double* V,       // n x m, device pointer (output eigenvectors)
     double* D,       // m x m, device pointer (output eigenvalues, diagonal)
@@ -54,12 +56,6 @@ void lopbcg(
     assert(3*m <= n);
 
     /* Allocations */
-    // cuBLAS/cuSOLVER handles
-    cublasHandle_t cublasH = nullptr;
-    cusolverDnHandle_t cusolverH = nullptr;
-    CHECK_CUBLAS(cublasCreate(&cublasH));
-    CHECK_CUSOLVER(cusolverDnCreate(&cusolverH));
-
     // allocate the device memory
     double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Delta_X_k, *T_tmp, *R_k;
     double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *T_tmp_XRD;
