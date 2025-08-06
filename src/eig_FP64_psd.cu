@@ -26,7 +26,9 @@ double* eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double*
     double one_d = 1.0;
     double zero_d = 0.0;
 
-    double *dW; CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
+    double *dW, *dW_out;
+    CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
+
     int lwork_ev = 0;
     CHECK_CUSOLVER(cusolverDnDsyevd_bufferSize(
         solverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
@@ -40,19 +42,24 @@ double* eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double*
         dWork_ev, lwork_ev, devInfo));
     CHECK_CUDA(cudaDeviceSynchronize());
 
-    std::vector<double> W_h(n);
-    CHECK_CUDA(cudaMemcpy(W_h.data(), dW, n*sizeof(double), cudaMemcpyDeviceToHost));
+    if (return_eigenvalues) { // save the eigevalues before zeroing them out
+        CHECK_CUDA(cudaMalloc(&dW_out, n*sizeof(double)));
+        CHECK_CUDA(cudaMemcpy(dW_out, dW, n*sizeof(double), cudaMemcpyDeviceToDevice));
+    }
 
-    for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
+    max_dense_vector_zero(dW, n);
 
     // Copy eigenvectors from dA to dV
     double *dV; CHECK_CUDA(cudaMalloc(&dV, nn*sizeof(double)));
     CHECK_CUDA(cudaMemcpy(dV, dA, nn*sizeof(double), cudaMemcpyDeviceToDevice));
 
+    
     // Scale columns of dV by W_h
-    for(int i=0;i<n;i++){
-        CHECK_CUBLAS(cublasDscal(cublasH, n, &W_h[i], dV + i*n, 1));
+    CHECK_CUBLAS(cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE));
+    for(int i = 0; i < n; i++){
+        CHECK_CUBLAS(cublasDscal(cublasH, n, &dW[i], dV + i*n, 1));
     }
+    CHECK_CUBLAS(cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST));
 
     // Reconstruct A_psd = V * V^T
     double *dTmp; CHECK_CUDA(cudaMalloc(&dTmp, nn*sizeof(double)));
@@ -67,15 +74,11 @@ double* eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double*
         CUDA_R_64F, CUBLAS_GEMM_DEFAULT_TENSOR_OP));
     CHECK_CUDA(cudaMemcpy(dA, dTmp, nn*sizeof(double), cudaMemcpyDeviceToDevice));
     CHECK_CUDA(cudaFree(dTmp));
+    CHECK_CUDA(cudaFree(dW));
     CHECK_CUDA(cudaFree(dV));
     CHECK_CUDA(cudaFree(dWork_ev));
     CHECK_CUDA(cudaFree(devInfo));
     CHECK_CUDA(cudaDeviceSynchronize());
     
-    if (!return_eigenvalues) {
-        CHECK_CUDA(cudaFree(dW));
-        return nullptr;
-    } else {
-        return dW;
-    }
+    return dW_out;
 }

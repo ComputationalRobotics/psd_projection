@@ -153,4 +153,10 @@ void fill_random(double* vec, int n, unsigned long seed = 0, const int threadsPe
 
 unsigned long make_seed();
 
+void max_dense_vector_zero(
+    double* vec_vals,
+    int vec_size,
+    const cudaStream_t& stream = (cudaStream_t) 0, int block_size = 1024
+);
+
 #endif // PSD_PROJECTION_UTILS_H

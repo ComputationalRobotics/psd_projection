@@ -216,3 +216,21 @@ void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlo
         exit(EXIT_FAILURE);
     }
 }
+
+// Set the current coefficient of a dense vector to its positive part:
+// vec[idx] = max(vec[idx], 0)
+__global__ void max_dense_vector_zero_kernel(double* vec_vals, int vec_size) {
+    int idx = threadIdx.x + blockIdx.x * blockDim.x;
+    if (idx < vec_size) {
+        vec_vals[idx] = max(vec_vals[idx], 0.0);
+    }
+    return;
+}
+
+// Set a vector to its positive part coefficient-wise:
+// vec = max(vec, 0)
+void max_dense_vector_zero(double* vec_vals, int vec_size, const cudaStream_t& stream, int block_size) {
+    int num_block = (vec_size + block_size - 1) / block_size;
+    max_dense_vector_zero_kernel<<<num_block, block_size, 0, stream>>>(vec_vals, vec_size);
+    return;
+}
