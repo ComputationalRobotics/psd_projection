@@ -20,7 +20,7 @@
 #include "psd_projection/utils.h"
 #include "psd_projection/eig_FP32_psd.h"
 
-void eig_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, size_t n) {
+double* eig_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, size_t n, bool return_eigenvalues) {
     size_t nn = n * n;
     float one_s = 1.0;
     float zero_s = 0.0;
@@ -78,12 +78,19 @@ void eig_FP32_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA
 
     // Cleanup
     CHECK_CUDA(cudaFree(sWork_ev));
-    CHECK_CUDA(cudaFree(sW));
     CHECK_CUDA(cudaFree(sA));
     CHECK_CUDA(cudaFree(sTmp));
     CHECK_CUDA(cudaFree(sV));
     CHECK_CUDA(cudaFree(devInfo));
     CHECK_CUDA(cudaDeviceSynchronize());
 
-    return;
+    if (!return_eigenvalues) {
+        CHECK_CUDA(cudaFree(sW));
+        return nullptr;
+    } else {
+        double *dW; CHECK_CUDA(cudaMalloc(&dW, n*sizeof(double)));
+        convert_float_to_double(sW, dW, n);
+        CHECK_CUDA(cudaFree(sW));
+        return dW;
+    }
 }

@@ -20,7 +20,7 @@
 #include "psd_projection/utils.h"
 #include "psd_projection/eig_FP64_psd.h"
 
-void eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, size_t n) {
+double* eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, size_t n, bool return_eigenvalues) {
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
     size_t nn = n * n;
     double one_d = 1.0;
@@ -42,10 +42,6 @@ void eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA
 
     std::vector<double> W_h(n);
     CHECK_CUDA(cudaMemcpy(W_h.data(), dW, n*sizeof(double), cudaMemcpyDeviceToHost));
-
-    // std::cout << "Max and min eigenvalues: "
-    //           << *std::max_element(W_h.begin(), W_h.end()) << ", "
-    //           << *std::min_element(W_h.begin(), W_h.end()) << std::endl;
 
     for(int i=0;i<n;i++) if(W_h[i]<0) W_h[i]=0;
 
@@ -73,9 +69,13 @@ void eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA
     CHECK_CUDA(cudaFree(dTmp));
     CHECK_CUDA(cudaFree(dV));
     CHECK_CUDA(cudaFree(dWork_ev));
-    CHECK_CUDA(cudaFree(dW));
     CHECK_CUDA(cudaFree(devInfo));
     CHECK_CUDA(cudaDeviceSynchronize());
-
-    return;
+    
+    if (!return_eigenvalues) {
+        CHECK_CUDA(cudaFree(dW));
+        return nullptr;
+    } else {
+        return dW;
+    }
 }

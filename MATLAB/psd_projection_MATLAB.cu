@@ -105,6 +105,9 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     CHECK_CUDA(cudaMalloc(&dA_psd, n * n * sizeof(double)));
     CHECK_CUDA(cudaMemcpy(dA_psd, cpu_At_csc_vals.data(), n * n * sizeof(double), H2D));
 
+    // if method is 'eig_FP64' or 'eig_FP32', also output the eigenvalues
+    double *eigenvals;
+
     // call the appropriate method
     if (method == "composite_FP16") {
         // approximate the spectral norm
@@ -153,10 +156,10 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
         #endif
     }
     else if (method == "eig_FP64") {
-        eig_FP64_psd(solverH, cublasH, dA_psd, n);
+        eigenvals = eig_FP64_psd(solverH, cublasH, dA_psd, n, true);
     }
     else if (method == "eig_FP32") {
-        eig_FP32_psd(solverH, cublasH, dA_psd, n);
+        eigenvals = eig_FP32_psd(solverH, cublasH, dA_psd, n, true);
     } else {
         mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated', 'eig_FP64', and 'eig_FP32'.");
         return;
@@ -168,6 +171,15 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     plhs[0] = mxCreateDoubleMatrix(n, n, mxREAL);
     double* cpu_At_psd_vals = mxGetPr(plhs[0]);
     CHECK_CUDA(cudaMemcpy(cpu_At_psd_vals, dA_psd, n * n * sizeof(double), D2H));
+
+    if (method == "eig_FP64" || method == "eig_FP32") {
+        plhs[1] = mxCreateDoubleMatrix(n, 1, mxREAL);
+        double* cpu_eigenvals = mxGetPr(plhs[1]);
+        CHECK_CUDA(cudaMemcpy(cpu_eigenvals, eigenvals, n * sizeof(double), D2H));
+        CHECK_CUDA(cudaFree(eigenvals));
+    }
+
+    CHECK_CUDA(cudaDeviceSynchronize());
 
     // free
     CHECK_CUDA(cudaFree(dA_psd));
