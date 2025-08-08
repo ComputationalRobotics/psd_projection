@@ -57,6 +57,7 @@ void lopbcg(
 
     /* Allocations */
     // allocate the device memory
+    // TODO: replace X_k and Lam_k by V and D
     double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Delta_X_k, *T_tmp, *R_k;
     double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *T_tmp_XRD;
     CHECK_CUDA(cudaMalloc(&X_k,            n * m * sizeof(double)));
