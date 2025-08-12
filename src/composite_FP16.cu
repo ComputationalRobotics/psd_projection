@@ -14,17 +14,6 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-__global__ void negate_array_kernel(double* arr, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) arr[idx] = -arr[idx];
-}
-
-void negate_array(double* arr, int n) {
-    int blockSize = 1024;
-    int numBlocks = (n + blockSize - 1) / blockSize;
-    negate_array_kernel<<<numBlocks, blockSize>>>(arr, n);
-    CHECK_CUDA(cudaGetLastError());
-}
 
 __global__ void relu_eigenvalues_kernel(double* arr, int n) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
@@ -311,26 +300,51 @@ void composite_FP16_auto_scale_deflate(
     const bool verbose
 ) {
     size_t nn = n * n;
-    
-    /* Step 1: compute the largest eigenpairs of the matrix */
+    double minus_one = -1.0;
+
     // TODO: use a workspace for the eigenvalues and eigenvectors
-    double *eigenvalues, *eigenvectors;
-    CHECK_CUDA( cudaMalloc(&eigenvalues,      k * sizeof(double)) );
-    CHECK_CUDA( cudaMalloc(&eigenvectors, n * k * sizeof(double)) );
+    double *eigenvalues_max, *eigenvectors_max;
+    double *eigenvalues_min, *eigenvectors_min;
+    CHECK_CUDA( cudaMalloc(&eigenvalues_max,      k * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&eigenvectors_max, n * k * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&eigenvalues_min,      k * sizeof(double)) );
+    CHECK_CUDA( cudaMalloc(&eigenvectors_min, n * k * sizeof(double)) );
 
+    /* Step 1: compute the largest eigenpairs of the matrix */
     lopbcg(
-        cublasH, solverH, mat, eigenvectors, eigenvalues, n, k, maxiter, tol, verbose
+        cublasH, solverH, mat, eigenvectors_max, eigenvalues_max, n, k, false, maxiter, tol, verbose
     );
-
-    negate_array(eigenvalues, k);
+    // negate the eigenvalues
+    CHECK_CUBLAS(cublasDscal(cublasH, k, &minus_one, eigenvalues_max, 1));
 
     /* Step 2: remove the largest eigenvalues from the matrix */
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
     for (int i = 0; i < k; i++) {
         // X <- X - \lambda_i * v_i v_i^T
-        // double lambda = -eigenvalues_host[i];
-        double *v_i = eigenvectors + i * n;
-        double *m_lambda_i = eigenvalues + i;
+        double *v_i = eigenvectors_max + i * n;
+        double *m_lambda_i = eigenvalues_max + i;
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
+    }
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
+
+    /* Step 1bis: compute the lowest eigenpairs of the matrix */
+    // change the matrix sign to reuse LOPBCG code
+    CHECK_CUBLAS(cublasDscal(cublasH, nn, &minus_one, mat, 1));
+    lopbcg(
+        cublasH, solverH, mat, eigenvectors_min, eigenvalues_min, n, k, false, maxiter, tol, verbose
+    );
+
+    /* Step 2bis: remove the lowest eigenvalues from the matrix */
+    // restore the matrix sign
+    CHECK_CUBLAS(cublasDscal(cublasH, nn, &minus_one, mat, 1));
+    // negate the eigenvalues
+    CHECK_CUBLAS(cublasDscal(cublasH, k, &minus_one, eigenvalues_max, 1));
+    // remove them
+    cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
+    for (int i = 0; i < k; i++) {
+        // X <- X - \lambda_i * v_i v_i^T
+        double *v_i = eigenvectors_min + i * n;
+        double *m_lambda_i = eigenvalues_min + i;
         CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
     }
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
@@ -352,18 +366,26 @@ void composite_FP16_auto_scale_deflate(
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
 
-
-    relu_eigenvalues(eigenvalues, k);
+    relu_eigenvalues(eigenvalues_max, k);
+    relu_eigenvalues(eigenvalues_min, k);
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
     for (int i = 0; i < k; i++) {
         // X <- X + \lambda_i * v_i v_i^T
-        double *m_lambda_i = eigenvalues + i;
-        double *v_i = eigenvectors + i * n;
+        double *m_lambda_i = eigenvalues_max + i;
+        double *v_i = eigenvectors_max + i * n;
+        CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
+    }
+    for (int i = 0; i < k; i++) {
+        // X <- X + \lambda_i * v_i v_i^T
+        double *m_lambda_i = eigenvalues_min + i;
+        double *v_i = eigenvectors_min + i * n;
         CHECK_CUBLAS( cublasDger(cublasH, n, n, m_lambda_i, v_i, 1, v_i, 1, mat, n) );
     }
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
 
     /* Free device memory */
-    CHECK_CUDA( cudaFree(eigenvalues) );
-    CHECK_CUDA( cudaFree(eigenvectors) );
+    CHECK_CUDA( cudaFree(eigenvalues_max) );
+    CHECK_CUDA( cudaFree(eigenvectors_max) );
+    CHECK_CUDA( cudaFree(eigenvalues_min) );
+    CHECK_CUDA( cudaFree(eigenvectors_min) );
 }
