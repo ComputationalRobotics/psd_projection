@@ -47,6 +47,7 @@ void lopbcg(
     double* D,       // m x m, device pointer (output eigenvalues, diagonal)
     const int n,
     const int m ,      // number of eigenpairs
+    const int warmstart,
     const int maxiter, // maximum iterations
     const double tol,   // convergence tolerance
     const bool verbose
@@ -57,7 +58,6 @@ void lopbcg(
 
     /* Allocations */
     // allocate the device memory
-    // TODO: replace X_k and Lam_k by V and D
     double *X_k, *X_k_tmp, *Lam_k, *Lam_k_tmp, *T, *Delta_X_k, *T_tmp, *R_k;
     double *XRD, *Lam_all, *XRD_tmp, *T_XRD, *T_tmp_XRD;
     CHECK_CUDA(cudaMalloc(&X_k,            n * m * sizeof(double)));
@@ -77,20 +77,11 @@ void lopbcg(
 
     double norm_R_k;
 
-    // workspace for QR decomposition of X_k
-    int lwork, *devInfo;
-    double *d_work, *tau;
-    CHECK_CUDA(cudaMalloc(&tau, m * sizeof(double)));
-    CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, m, X_k, n, &lwork));
-    CHECK_CUDA(cudaMalloc(&d_work, lwork * sizeof(double)));
-    CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
-
-    // workspace for QR decomposition of XRD
-    int lwork_xrd;
-    double *d_work_xrd, *tau_xrd;
-    CHECK_CUDA(cudaMalloc(&tau_xrd, 3*m * sizeof(double)));
-    CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, 3*m, XRD, n, &lwork_xrd));
-    CHECK_CUDA(cudaMalloc(&d_work_xrd, lwork_xrd * sizeof(double)));
+    // useful constants
+    const double one = 1.0;
+    const double zero = 0.0;
+    const double half = 0.5;
+    const double neg1 = -1.0;
 
     // workspace for eigenvalue decomposition
     int lwork_eig;
@@ -106,20 +97,38 @@ void lopbcg(
                                                 3*m, T_XRD, 3*m, Lam_all, &lwork_eig_XRD));
     CHECK_CUDA(cudaMalloc(&d_work_eig_XRD, lwork_eig_XRD * sizeof(double)));
 
-    // useful constants
-    const double one = 1.0;
-    const double zero = 0.0;
-    const double half = 0.5;
-    const double neg1 = -1.0;
+    int *devInfo;
+    CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
+
+    // workspace for QR decomposition of XRD
+    int lwork_xrd;
+    double *d_work_xrd, *tau_xrd;
+    CHECK_CUDA(cudaMalloc(&tau_xrd, 3*m * sizeof(double)));
+    CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, 3*m, XRD, n, &lwork_xrd));
+    CHECK_CUDA(cudaMalloc(&d_work_xrd, lwork_xrd * sizeof(double)));
+
+    double *d_work, *tau;
 
     /* Initialization of X_k */
-    fill_random(X_k, n * m, make_seed());
+    if (warmstart) {
+        CHECK_CUDA(cudaMemcpy(X_k, V, n * m * sizeof(double), D2D));
+        CHECK_CUDA(cudaMemcpy(Lam_k, D, m * sizeof(double), D2D));
+        // note: we assume V is orthonormal
+    } else {
+        // workspace for QR decomposition of X_k
+        int lwork;
+        CHECK_CUDA(cudaMalloc(&tau, m * sizeof(double)));
+        CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, m, X_k, n, &lwork));
+        CHECK_CUDA(cudaMalloc(&d_work, lwork * sizeof(double)));
 
-    // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
-    CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
+        fill_random(X_k, n * m, make_seed());
 
-    // generate Q from the result (X_k overwritten with Q)
-    CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, m, m, X_k, n, tau, d_work, lwork, devInfo));
+        // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
+        CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
+
+        // generate Q from the result (X_k overwritten with Q)
+        CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, m, m, X_k, n, tau, d_work, lwork, devInfo));
+    }
 
     /* Compute new X_k using T */
     // T = Q^T * A * Q
@@ -255,8 +264,10 @@ void lopbcg(
     CHECK_CUDA(cudaFree(X_k_tmp));
     CHECK_CUDA(cudaFree(Lam_k));
     CHECK_CUDA(cudaFree(Lam_k_tmp));
-    CHECK_CUDA(cudaFree(d_work));
-    CHECK_CUDA(cudaFree(tau));
+    if (!warmstart) {
+        CHECK_CUDA(cudaFree(d_work));
+        CHECK_CUDA(cudaFree(tau));
+    }
     CHECK_CUDA(cudaFree(d_work_xrd));
     CHECK_CUDA(cudaFree(tau_xrd));
     CHECK_CUDA(cudaFree(T_tmp));
