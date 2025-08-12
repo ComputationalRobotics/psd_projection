@@ -8,7 +8,6 @@
 #include <iostream>
 
 #include "psd_projection/composite_FP16.h"
-#include "psd_projection/composite_FP32.h"
 #include "psd_projection/lanczos.h"
 #include "psd_projection/lopbcg.h"
 #include "psd_projection/check.h"
@@ -333,12 +332,11 @@ void composite_FP16_auto_scale_deflate(
     lopbcg(
         cublasH, solverH, mat, eigenvectors_min, eigenvalues_min, n, k, false, maxiter, tol, verbose
     );
+    // note: the min eigenvalues are already negated since we used -A
 
     /* Step 2bis: remove the lowest eigenvalues from the matrix */
     // restore the matrix sign
     CHECK_CUBLAS(cublasDscal(cublasH, nn, &minus_one, mat, 1));
-    // negate the eigenvalues
-    CHECK_CUBLAS(cublasDscal(cublasH, k, &minus_one, eigenvalues_max, 1));
     // remove them
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
     for (int i = 0; i < k; i++) {

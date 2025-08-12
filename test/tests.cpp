@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "composite_FP32_test.hpp"
+#include "composite_FP16_test.hpp"
 #include "lopbcg_test.hpp"
 #include "lanczos_test.hpp"
 
