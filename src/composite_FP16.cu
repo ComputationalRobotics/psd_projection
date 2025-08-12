@@ -359,13 +359,16 @@ void composite_FP16_auto_scale_deflate(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &inv_scale, mat, 1) );
 
     /* Step 4: project the matrix using the composite_FP16 function */
-    composite_FP16(cublasH, mat, n);
+    composite_FP16(cublasH, mat, n, float_workspace, half_workspace);
 
     /* Step 5: rescale the matrix back and add the deflated eigenvalues back */
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
 
+    // add only positive eigenvalues back
     relu_eigenvalues(eigenvalues_max, k);
     relu_eigenvalues(eigenvalues_min, k);
+    // note: relu_eigenvalues takes negated eigenvalues as input
+
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
     for (int i = 0; i < k; i++) {
         // X <- X + \lambda_i * v_i v_i^T
