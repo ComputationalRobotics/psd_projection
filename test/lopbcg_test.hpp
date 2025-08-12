@@ -112,6 +112,7 @@ TEST(LOPBCG, Random)
 
             // cleanup
             CHECK_CUDA(cudaFree(A));
+            CHECK_CUDA(cudaFree(A_tmp));
             CHECK_CUDA(cudaFree(V));
             CHECK_CUDA(cudaFree(D));
             CHECK_CUDA(cudaFree(expected));
