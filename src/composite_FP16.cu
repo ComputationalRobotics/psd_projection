@@ -9,7 +9,7 @@
 
 #include "psd_projection/composite_FP16.h"
 #include "psd_projection/lanczos.h"
-#include "psd_projection/lopbcg.h"
+#include "psd_projection/lobpcg.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
@@ -297,7 +297,7 @@ void composite_FP16_auto_scale_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors_min, n * k * sizeof(double)) );
 
     /* Step 1: compute the largest eigenpairs of the matrix */
-    lopbcg(
+    lobpcg(
         cublasH, solverH, mat, eigenvectors_max, eigenvalues_max, n, k, false, maxiter, tol, verbose
     );
     // negate the eigenvalues
@@ -314,9 +314,9 @@ void composite_FP16_auto_scale_deflate(
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
 
     /* Step 1bis: compute the lowest eigenpairs of the matrix */
-    // change the matrix sign to reuse LOPBCG code
+    // change the matrix sign to reuse LOBPCG code
     CHECK_CUBLAS(cublasDscal(cublasH, nn, &minus_one, mat, 1));
-    lopbcg(
+    lobpcg(
         cublasH, solverH, mat, eigenvectors_min, eigenvalues_min, n, k, false, maxiter, tol, verbose
     );
     // note: the min eigenvalues are already negated since we used -A

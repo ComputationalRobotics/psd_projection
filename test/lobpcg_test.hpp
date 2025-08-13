@@ -1,13 +1,13 @@
 #include <vector>
 #include <cmath>
 
-#include "psd_projection/lopbcg.h"
+#include "psd_projection/lobpcg.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/eig_FP64_psd.h"
 
 
-TEST(LOPBCG, Simple)
+TEST(LOBPCG, Simple)
 {
     size_t n = 6;
     size_t m = 2; // number of eigenpairs to compute
@@ -35,8 +35,8 @@ TEST(LOPBCG, Simple)
     CHECK_CUBLAS(cublasCreate(&cublasH));
     CHECK_CUSOLVER(cusolverDnCreate(&solverH));
 
-    // run the LOPBCG algorithm
-    lopbcg(cublasH, solverH, A, V, D, n, m, 100, 1e-8, true);
+    // run the LOBPCG algorithm
+    lobpcg(cublasH, solverH, A, V, D, n, m, 100, 1e-8, true);
 
     // check if the eigenvalues are close to the expected values
     std::vector<double> expected_eigenvalues = {7.3191, 5.6639}; // expected eigenvalues for this matrix
@@ -54,7 +54,7 @@ TEST(LOPBCG, Simple)
     CHECK_CUSOLVER(cusolverDnDestroy(solverH));
 }
 
-TEST(LOPBCG, Random)
+TEST(LOBPCG, Random)
 {
     std::vector<int> ns = {100, 1000};
     for (int i = 0; i < ns.size(); i++) {
@@ -91,8 +91,8 @@ TEST(LOPBCG, Random)
             CHECK_CUBLAS(cublasDgeam(cublasH, CUBLAS_OP_T, CUBLAS_OP_N, n, n, &one, A_tmp, n, &one, A, n, A, n));
 
 
-            // run the LOPBCG algorithm
-            lopbcg(cublasH, solverH, A, V, D, n, m);
+            // run the LOBPCG algorithm
+            lobpcg(cublasH, solverH, A, V, D, n, m);
 
             // check if the eigenvalues are close to the expected values
             std::vector<double> expected_eigenvalues(m); // expected eigenvalues for this matrix

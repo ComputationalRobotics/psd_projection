@@ -5,7 +5,7 @@
 #include <cassert>
 #include <cstdio>
 
-#include "psd_projection/lopbcg.h"
+#include "psd_projection/lobpcg.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
@@ -39,7 +39,7 @@ void reverse_columns(const double* in, double* out, int n, int m) {
     CHECK_CUDA(cudaGetLastError());
 }
 
-void lopbcg(
+void lobpcg(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
     const double* A, // n x n, device pointer
@@ -185,7 +185,7 @@ void lopbcg(
         CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
 
         if (verbose) {
-            std::cout << "LOPBCG iter: " << iter << "||R_k||_F = " << norm_R_k << std::endl;
+            std::cout << "LOBPCG iter: " << iter << "||R_k||_F = " << norm_R_k << std::endl;
         }
 
         // if the norm of R_k is less than tol, break

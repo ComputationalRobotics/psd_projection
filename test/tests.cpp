@@ -2,7 +2,7 @@
 
 #include "composite_FP32_test.hpp"
 #include "composite_FP16_test.hpp"
-#include "lopbcg_test.hpp"
+#include "lobpcg_test.hpp"
 #include "lanczos_test.hpp"
 
 int main(int argc, char **argv)

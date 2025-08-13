@@ -19,7 +19,7 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 #include "psd_projection/eig_FP64_psd.h"
-#include "psd_projection/lopbcg.h"
+#include "psd_projection/lobpcg.h"
 
 double* eig_FP64_psd(cusolverDnHandle_t solverH, cublasHandle_t cublasH, double* dA, size_t n, bool return_eigenvalues) {
     int *devInfo; CHECK_CUDA(cudaMalloc(&devInfo, sizeof(int)));
@@ -106,7 +106,7 @@ void eig_FP64_deflate(
     CHECK_CUDA( cudaMalloc(&eigenvectors_min, n * k * sizeof(double)) );
 
     /* Step 1: compute the largest eigenpairs of the matrix */
-    lopbcg(
+    lobpcg(
         cublasH, solverH, mat, eigenvectors_max, eigenvalues_max, n, k, false, maxiter, tol, verbose
     );
     // negate the eigenvalues
@@ -123,9 +123,10 @@ void eig_FP64_deflate(
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_HOST);
 
     /* Step 1bis: compute the lowest eigenpairs of the matrix */
-    // change the matrix sign to reuse LOPBCG code
+    // change the matrix sign to reuse LOBPCG code
     CHECK_CUBLAS(cublasDscal(cublasH, nn, &minus_one, mat, 1));
-    lopbcg(
+    // TODO: warmstart LOBPCG
+    lobpcg(
         cublasH, solverH, mat, eigenvectors_min, eigenvalues_min, n, k, false, maxiter, tol, verbose
     );
     // note: the min eigenvalues are already negated since we used -A

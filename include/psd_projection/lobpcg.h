@@ -1,7 +1,7 @@
-#ifndef PSD_PROJECTION_LOPBCG_H
-#define PSD_PROJECTION_LOPBCG_H
+#ifndef PSD_PROJECTION_LOBPCG_H
+#define PSD_PROJECTION_LOBPCG_H
 
-/// @brief Computes the largest `m` eigenpairs of a symmetric matrix `A` using the LOPBCG algorithm.
+/// @brief Computes the largest `m` eigenpairs of a symmetric matrix `A` using the LOBPCG algorithm.
 /// @param cublasH cuBLAS handle
 /// @param cusolverH cuSOLVER handle for QR and eigenvalue decompositions
 /// @param A n x n symmetric matrix (device pointer)
@@ -13,7 +13,7 @@
 /// @param maxiter maximum number of iterations
 /// @param tol convergence tolerance
 /// @param verbose if true, print verbose output
-void lopbcg(
+void lobpcg(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
     const double* A, // n x n, device pointer
@@ -27,4 +27,4 @@ void lopbcg(
     const bool verbose = false // verbosity flag
 );
 
-#endif // PSD_PROJECTION_LOPBCG_H
+#endif // PSD_PROJECTION_LOBPCG_H
