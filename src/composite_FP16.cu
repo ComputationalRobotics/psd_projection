@@ -13,19 +13,6 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-
-__global__ void relu_eigenvalues_kernel(double* arr, int n) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < n) arr[idx] = fmaxf(0.0, -arr[idx]); // minus since we negated the eigenvalues before
-}
-
-void relu_eigenvalues(double* arr, int n) {
-    int blockSize = 1024;
-    int numBlocks = (n + blockSize - 1) / blockSize;
-    relu_eigenvalues_kernel<<<numBlocks, blockSize>>>(arr, n);
-    CHECK_CUDA(cudaGetLastError());
-}
-
 void composite_FP16(
     cublasHandle_t cublasH,
     double* mat,
@@ -365,9 +352,10 @@ void composite_FP16_auto_scale_deflate(
     CHECK_CUBLAS( cublasDscal(cublasH, nn, &scale, mat, 1) );
 
     // add only positive eigenvalues back
-    relu_eigenvalues(eigenvalues_max, k);
-    relu_eigenvalues(eigenvalues_min, k);
-    // note: relu_eigenvalues takes negated eigenvalues as input
+    CHECK_CUBLAS( cublasDscal(cublasH, k, &minus_one, eigenvalues_max, 1) );
+    CHECK_CUBLAS( cublasDscal(cublasH, k, &minus_one, eigenvalues_min, 1) );
+    max_dense_vector_zero(eigenvalues_max, k);
+    max_dense_vector_zero(eigenvalues_min, k);
 
     cublasSetPointerMode(cublasH, CUBLAS_POINTER_MODE_DEVICE);
     for (int i = 0; i < k; i++) {
