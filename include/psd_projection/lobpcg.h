@@ -21,7 +21,7 @@ void lobpcg(
     double* D,       // m x m, device pointer (output eigenvalues, diagonal)
     const int n,
     const int m ,    // number of eigenpairs
-    const int warmstart = false,
+    const double warmstart = false,
     const int maxiter = 100, // maximum iterations
     const double tol = 1e-8,  // convergence tolerance
     const bool verbose = false // verbosity flag
