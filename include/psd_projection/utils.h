@@ -159,4 +159,8 @@ void max_dense_vector_zero(
     const cudaStream_t& stream = (cudaStream_t) 0, int block_size = 1024
 );
 
+void reverse_vector(const double* in, double* out, int m);
+
+void reverse_columns(const double* in, double* out, int n, int m);
+
 #endif // PSD_PROJECTION_UTILS_H

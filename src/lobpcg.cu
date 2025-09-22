@@ -9,36 +9,6 @@
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
 
-__global__ void reverse_vector_kernel(const double* in, double* out, int m) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m) {
-        out[idx] = in[m - 1 - idx];
-    }
-}
-
-void reverse_vector(const double* in, double* out, int m) {
-    int threads = 1024;
-    int blocks = (m + threads - 1) / threads;
-    reverse_vector_kernel<<<blocks, threads>>>(in, out, m);
-    CHECK_CUDA(cudaGetLastError());
-}
-
-__global__ void reverse_columns_kernel(const double* in, double* out, int n, int m) {
-    int row = blockIdx.x * blockDim.x + threadIdx.x;
-    int col = blockIdx.y * blockDim.y + threadIdx.y;
-    if (row < n && col < m) {
-        // Copy column col to column (m - 1 - col)
-        out[row + (m - 1 - col) * n] = in[row + col * n];
-    }
-}
-
-void reverse_columns(const double* in, double* out, int n, int m) {
-    dim3 threads(32, 32);
-    dim3 blocks((n + threads.x - 1) / threads.x, (m + threads.y - 1) / threads.y);
-    reverse_columns_kernel<<<blocks, threads>>>(in, out, n, m);
-    CHECK_CUDA(cudaGetLastError());
-}
-
 void lobpcg(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
@@ -121,7 +91,7 @@ void lobpcg(
         CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, m, X_k, n, &lwork));
         CHECK_CUDA(cudaMalloc(&d_work, lwork * sizeof(double)));
 
-        fill_random(X_k, n * m, make_seed());
+        fill_random(X_k, n * m, 0);
 
         // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
