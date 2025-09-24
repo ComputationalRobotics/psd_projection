@@ -77,15 +77,15 @@ void lobpcg(
     CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, 3*m, XRD, n, &lwork_xrd));
     CHECK_CUDA(cudaMalloc(&d_work_xrd, lwork_xrd * sizeof(double)));
 
-    double *d_work, *tau;
 
     /* Initialization of X_k */
     if (warmstart) {
         CHECK_CUDA(cudaMemcpy(X_k, V, n * m * sizeof(double), D2D));
         CHECK_CUDA(cudaMemcpy(Lam_k, D, m * sizeof(double), D2D));
-        // note: we assume V is orthonormal
+        // note: we assume vectors in V are orthonormal
     } else {
         // workspace for QR decomposition of X_k
+        double *d_work, *tau;
         int lwork;
         CHECK_CUDA(cudaMalloc(&tau, m * sizeof(double)));
         CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, m, X_k, n, &lwork));
@@ -98,6 +98,9 @@ void lobpcg(
 
         // generate Q from the result (X_k overwritten with Q)
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, m, m, X_k, n, tau, d_work, lwork, devInfo));
+
+        CHECK_CUDA(cudaFree(d_work));
+        CHECK_CUDA(cudaFree(tau));
     }
 
     /* Compute new X_k using T */
@@ -234,10 +237,6 @@ void lobpcg(
     CHECK_CUDA(cudaFree(X_k_tmp));
     CHECK_CUDA(cudaFree(Lam_k));
     CHECK_CUDA(cudaFree(Lam_k_tmp));
-    if (!warmstart) {
-        CHECK_CUDA(cudaFree(d_work));
-        CHECK_CUDA(cudaFree(tau));
-    }
     CHECK_CUDA(cudaFree(d_work_xrd));
     CHECK_CUDA(cudaFree(tau_xrd));
     CHECK_CUDA(cudaFree(T_tmp));
