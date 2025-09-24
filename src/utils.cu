@@ -210,11 +210,7 @@ __global__ void fill_random_kernel(double* vec, int n, unsigned long seed) {
 void fill_random(double* vec, int n, unsigned long seed, const int threadsPerBlock) {
     int blocks = (n + threadsPerBlock - 1) / threadsPerBlock;
     fill_random_kernel<<<blocks, threadsPerBlock>>>(vec, n, seed);
-    cudaError_t err = cudaGetLastError();
-    if (err != cudaSuccess) {
-        fprintf(stderr, "CUDA error in fill_random: %s\n", cudaGetErrorString(err));
-        exit(EXIT_FAILURE);
-    }
+    CHECK_CUDA(cudaGetLastError());
 }
 
 // Set the current coefficient of a dense vector to its positive part:
