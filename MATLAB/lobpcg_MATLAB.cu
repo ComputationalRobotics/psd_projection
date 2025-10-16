@@ -43,20 +43,19 @@ void get_dnmat_from_matlab(
 
 void get_dnmat_from_matlab(
     const mxArray* mx_dnmat,
-    int* n,
-    int* m,
+    int* nb_rows,
+    int* nb_cols,
     std::vector<double>& cpu_dnmat_vals
 ) {
-    // read the matrix size from MATLAB and check that it is square
-    int cpu_dnmat_row_size = static_cast<int>( mxGetM(mx_dnmat) );
-    int cpu_dnmat_col_size = static_cast<int>( mxGetN(mx_dnmat) );
-    *n = static_cast<int>(cpu_dnmat_row_size);
-    *m = static_cast<int>(cpu_dnmat_col_size);
+    int cpu_nb_rows = static_cast<int>( mxGetM(mx_dnmat) );
+    int cpu_nb_cols = static_cast<int>( mxGetN(mx_dnmat) );
+    *nb_rows = static_cast<int>(cpu_nb_rows);
+    *nb_cols = static_cast<int>(cpu_nb_cols);
 
     double* cpu_dnmat_vals_pointer = mxGetPr(mx_dnmat);
     cpu_dnmat_vals.clear();
-    cpu_dnmat_vals.resize(*n * *m, 0);
-    memcpy(cpu_dnmat_vals.data(), cpu_dnmat_vals_pointer, sizeof(double) * *n * *m);
+    cpu_dnmat_vals.resize(*nb_rows * *nb_cols, 0);
+    memcpy(cpu_dnmat_vals.data(), cpu_dnmat_vals_pointer, sizeof(double) * (*nb_rows) * (*nb_cols));
     return;
 }
 
@@ -130,7 +129,7 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     // get V
     int m_v, n_v;
     std::vector<double> cpu_V;
-    get_dnmat_from_matlab(prhs[INPUT_ID.V], &m_v, &n_v, cpu_V);
+    get_dnmat_from_matlab(prhs[INPUT_ID.V], &n_v, &m_v, cpu_V);
     assert (m_v == m);
     assert (n_v == n);
 
