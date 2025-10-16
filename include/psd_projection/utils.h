@@ -163,4 +163,6 @@ void reverse_vector(const double* in, double* out, int m);
 
 void reverse_columns(const double* in, double* out, int n, int m);
 
+void extract_columns(const double* in, double* out, int n, int m);
+
 #endif // PSD_PROJECTION_UTILS_H

@@ -228,9 +228,8 @@ void lobpcg(
         CHECK_CUBLAS(cublasDscal(cublasH, n * m, &neg1, Delta_X_k, 1));
 
         // X_k = XRD_tmp(1:m)
-        for (int i = 0; i < m; ++i) {
-            CHECK_CUBLAS(cublasDcopy(cublasH, n, XRD_tmp + i*n, 1, X_k + i*n, 1));
-        }
+        extract_columns(XRD_tmp, X_k, n, m);
+        CHECK_CUDA(cudaDeviceSynchronize());
 
         // Delta = X_kp1 - X_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &one, X_k, 1, Delta_X_k, 1));

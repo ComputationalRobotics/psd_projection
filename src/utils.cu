@@ -260,3 +260,23 @@ void reverse_columns(const double* in, double* out, int n, int m) {
     reverse_columns_kernel<<<blocks, threads>>>(in, out, n, m);
     CHECK_CUDA(cudaGetLastError());
 }
+
+__global__ void extract_columns_kernel(const double* in, double* out, int n, int m) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+    if (row < n && col < m) {
+        out[row + col * n] = in[row + col * n];
+    }
+}
+
+/// @brief Extract the first m columns from an n x k matrix (k >= m)
+/// @param in Input matrix of size n x k (column-major)
+/// @param out Output matrix of size n x m (column-major)
+/// @param n Number of rows in the input matrix
+/// @param m Number of columns to extract
+void extract_columns(const double* in, double* out, int n, int m) {
+    dim3 threads(32, 32);
+    dim3 blocks((n + threads.x - 1) / threads.x, (m + threads.y - 1) / threads.y);
+    extract_columns_kernel<<<blocks, threads>>>(in, out, n, m);
+    CHECK_CUDA(cudaGetLastError());
+}
