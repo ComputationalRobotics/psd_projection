@@ -74,9 +74,13 @@ void lobpcg(
     int lwork_xrd;
     double *d_work_xrd, *tau_xrd;
     CHECK_CUDA(cudaMalloc(&tau_xrd, 3*m * sizeof(double)));
-    CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, 3*m, XRD, n, &lwork_xrd));
-    CHECK_CUDA(cudaMalloc(&d_work_xrd, lwork_xrd * sizeof(double)));
 
+    int lwork_geqrf = 0, lwork_orgqr = 0;
+    CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, 3*m, XRD, n, &lwork_geqrf));
+    CHECK_CUSOLVER(cusolverDnDorgqr_bufferSize(cusolverH, n, 3*m, 3*m, XRD, n, tau_xrd, &lwork_orgqr));
+    lwork_xrd = std::max(lwork_geqrf, lwork_orgqr);
+
+    CHECK_CUDA(cudaMalloc(&d_work_xrd, lwork_xrd * sizeof(double)));
 
     /* Initialization of X_k */
     if (warmstart) {
@@ -132,10 +136,11 @@ void lobpcg(
     // X_k = Q * T
     CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
                              &one, X_k, n, T, m,
-                             &zero, X_k, n));
+                             &zero, Delta_X_k, n));
+    CHECK_CUDA(cudaMemcpy(X_k, Delta_X_k, n * m * sizeof(double), D2D));
 
     // Delta_X_k = X_k
-    CHECK_CUBLAS(cublasDcopy(cublasH, n * m, X_k, 1, Delta_X_k, 1));
+    CHECK_CUBLAS(cublasDcopy_v2(cublasH, n * m, X_k, 1, Delta_X_k, 1));
 
     for (int iter = 1; iter <= maxiter; iter++) {
         // R_k = A * X_k - X_k * Lam_k
@@ -158,7 +163,7 @@ void lobpcg(
         CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
 
         if (verbose) {
-            std::cout << "LOBPCG iter: " << iter << "||R_k||_F = " << norm_R_k << std::endl;
+            std::cout << "LOBPCG iter: " << iter << " ||R_k||_F = " << norm_R_k << std::endl;
         }
 
         // if the norm of R_k is less than tol, break
@@ -175,8 +180,18 @@ void lobpcg(
         CHECK_CUDA(cudaMemcpy(XRD + 2 * n * m, Delta_X_k, n * m * sizeof(double), D2D));
 
         // compute QR factorization of XRD
+        int hInfo = -1;
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
+        CHECK_CUDA(cudaMemcpy(&hInfo, devInfo, sizeof(int), cudaMemcpyDeviceToHost));
+        if (hInfo != 0) {
+            std::fprintf(stderr, "QR/GEQRF failed: devInfo = %d\n", hInfo);
+            std::exit(1);
+        }
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, 3*m, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
+        if (hInfo != 0) {
+            std::fprintf(stderr, "QR/ORGQR failed: devInfo = %d\n", hInfo);
+            std::exit(1);
+        }
 
         // T = Q^T * A * Q
         // T_tmp = Q^T * A
