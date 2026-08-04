@@ -33,3 +33,34 @@ build
 *.exe
 *.out
 *.app
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+
+# Job logs
+slurm-*.out
+
+# MATLAB MEX build output
+MATLAB/build
+*.mexa64
+*.mexmaci64
+*.mexw64
+
+# LaTeX intermediates
+*.aux
+*.log
+*.toc
+*.synctex.gz
+
+# Development-only trees, deliberately kept out of the published repository:
+#   benchmark/     the 33-dataset MatrixDepot harness + its vendored copy of the
+#                  original fixed-composite method and raw result logs
+#   filter_design/ the offline filter-bank generator (its output,
+#                  include/psd_projection/filter_bank.h, IS committed)
+#   docs/          technical + benchmark reports (PDF and LaTeX sources)
+# They live in the working tree but are not tracked.  Remove the corresponding
+# line to publish one of them.
+benchmark/
+filter_design/
+docs/

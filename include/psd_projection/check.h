@@ -2,8 +2,11 @@
 
     check.h
 
-    Defines CHECK functions for CUDA, cuBLAS, cuSOLVER, and cuSPARSE.
-    These are used to check the return status of CUDA API calls.
+    Defines CHECK macros for CUDA, cuBLAS, cuSOLVER, and cuSPARSE.
+    Each tests the return status of an API call and printf's a diagnostic when it
+    fails.  NOTE: they do NOT abort, throw, or propagate the status -- execution
+    continues after a failed call, so a failed allocation leaves a null pointer in
+    play.  Callers that need hard failure must check the status themselves.
 
 */
 
@@ -35,7 +38,7 @@ do {                                                                           \
     }                                                                          \
 } while (0)
 
-// Check if the function returns a cuSPARSE error
+// Check if the function returns a cuSOLVER error
 #define CHECK_CUSOLVER(func)                                                   \
 do {                                                                           \
     cusolverStatus_t status = (func);                                          \

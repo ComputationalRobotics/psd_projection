@@ -22,12 +22,8 @@
 
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
-#include "psd_projection/composite_FP32.h"
-#include "psd_projection/composite_FP32_emulated.h"
-#include "psd_projection/composite_FP16.h"
-#include "psd_projection/lanczos.h"
+#include "psd_projection/adaptive_filter.h"
 #include "psd_projection/eig_FP64_psd.h"
-#include "psd_projection/eig_FP32_psd.h"
 
 void get_dnmat_from_matlab(
     const mxArray* mx_dnmat,
@@ -52,20 +48,38 @@ class INPUT_ID_factory {
     public:
         int mat;
         int method;
+        int tol;
 
         INPUT_ID_factory(int offset = 0) {
             this->mat = offset + 0;
             this->method = offset + 1;
+            this->tol = offset + 2;
         }
 };
+
+// Build the MATLAB struct describing what the adaptive method chose.
+static mxArray* make_report_struct(const AdaptiveReport& rep) {
+    const char* fields[] = {"T", "gemms", "eps", "scale", "predicted_rel_err",
+                            "deflated", "deflation_ms", "qualified"};
+    mxArray* s = mxCreateStructMatrix(1, 1, 8, fields);
+    mxSetField(s, 0, "T",                 mxCreateDoubleScalar((double)rep.T));
+    mxSetField(s, 0, "gemms",             mxCreateDoubleScalar((double)rep.gemms));
+    mxSetField(s, 0, "eps",               mxCreateDoubleScalar(rep.eps));
+    mxSetField(s, 0, "scale",             mxCreateDoubleScalar(rep.scale));
+    mxSetField(s, 0, "predicted_rel_err", mxCreateDoubleScalar(rep.predicted_rel_err));
+    mxSetField(s, 0, "deflated",          mxCreateDoubleScalar((double)rep.deflated));
+    mxSetField(s, 0, "deflation_ms",      mxCreateDoubleScalar(rep.deflation_ms));
+    mxSetField(s, 0, "qualified",         mxCreateLogicalScalar(rep.qualified));
+    return s;
+}
 
 void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     /* Input */
     INPUT_ID_factory INPUT_ID(0);
-    if (nrhs != 2) {
-        mexErrMsgTxt("Wrong number of input arguments. Expected 2 inputs: mat, method.");
+    if (nrhs != 2 && nrhs != 3) {
+        mexErrMsgTxt("Wrong number of input arguments. Expected 2 or 3 inputs: mat, method, [tol].");
     }
-    
+
     // get the matrix
     size_t n;
     std::vector<double> cpu_At_csc_vals;
@@ -83,6 +97,19 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     std::string method(method_cstr);
     mxFree(method_cstr);
 
+    // get the optional target relative tolerance (adaptive methods only)
+    double tol = 1e-3;
+    if (nrhs == 3) {
+        const mxArray* mx_tol = prhs[INPUT_ID.tol];
+        if (!mxIsDouble(mx_tol) || mxIsComplex(mx_tol) || mxGetNumberOfElements(mx_tol) != 1) {
+            mexErrMsgTxt("The 'tol' input must be a real scalar.");
+        }
+        tol = mxGetScalar(mx_tol);
+        if (!(tol > 0.0)) {
+            mexErrMsgTxt("The 'tol' input must be positive.");
+        }
+    }
+
     /* Project the matrix */
     // create the handles
     cusolverDnHandle_t solverH;
@@ -90,78 +117,66 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
 
     cublasHandle_t cublasH;
     CHECK_CUBLAS(cublasCreate(&cublasH));
-    if (method == "composite_FP16" || method == "eig_FP64" || method == "eig_FP32") {
+    if (method == "adaptive_FP16" || method == "composite_FP16" || method == "eig_FP64") {
         CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
     }
-    #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
-    else if (method == "composite_FP32_emulated") {
-        CHECK_CUBLAS(cublasSetMathMode(cublasH, CUBLAS_TENSOR_OP_MATH));
-        CHECK_CUBLAS(cublasSetEmulationStrategy(cublasH, CUBLAS_EMULATION_STRATEGY_EAGER));
-    }
-    #endif
-    
-    // create the host matrix
+
+    // create the device matrix
     double *dA_psd;
     CHECK_CUDA(cudaMalloc(&dA_psd, n * n * sizeof(double)));
     CHECK_CUDA(cudaMemcpy(dA_psd, cpu_At_csc_vals.data(), n * n * sizeof(double), H2D));
 
-    // if method is 'eig_FP64' or 'eig_FP32', also output the eigenvalues
-    double *eigenvals;
+    // if method is 'eig_FP64', also output the eigenvalues
+    double *eigenvals = nullptr;
+    // if method is adaptive, also output the report
+    AdaptiveReport rep;
+    bool is_adaptive = false;
 
-    // call the appropriate method
-    if (method == "composite_FP16") {
-        // approximate the spectral norm
-        double lo, up;
-        approximate_two_norm(
-            cublasH, solverH, dA_psd, n, &lo, &up
-        );
-        // scale to have eigenvalues in [-1, 1]
-        const double scale = up > 0.0 ? up : 1.0;
-        const double inv_scale = 1.0/scale;
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-        composite_FP16(cublasH, dA_psd, n);
-        // unscale
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
-    } else if (method == "composite_FP32") {
-        // approximate the spectral norm
-        double lo, up;
-        approximate_two_norm(
-            cublasH, solverH, dA_psd, n, &lo, &up
-        );
-        // scale to have eigenvalues in [-1, 1]
-        const double scale = up > 0.0 ? up : 1.0;
-        const double inv_scale = 1.0/scale;
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-        composite_FP32(cublasH, dA_psd, n);
-        // unscale
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
+    // call the appropriate method.  The adaptive method needs no pre-scaling: it
+    // derives an a-posteriori bound on ||A||_2 from its own spectral sketch.
+    //
+    // 'composite_FP32' / 'composite_FP16' are DEPRECATED ALIASES kept so scripts
+    // written against the fixed-composite version keep running.  They now run the
+    // adaptive method at the same precision, which is both faster and more accurate
+    // (see README); the fixed-T filters themselves are no longer built.  The
+    // original routines required the caller to pre-scale into [-1,1] and always
+    // spent T = 10 (FP32) / T = 7 (FP16) stages -- the alias does neither, so the
+    // numerical result differs (it is closer to the exact projection, not further).
+    if (method == "adaptive" || method == "adaptive_FP32" || method == "composite_FP32") {
+        AdaptiveOptions opts;
+        opts.tol = tol;
+        opts.precision = Precision::FP32;
+        rep = psd_projection_adaptive(cublasH, solverH, dA_psd, (int)n, opts);
+        is_adaptive = true;
     }
-    else if (method == "composite_FP32_emulated") {
-        #if defined(CUDA_VERSION) && (CUDA_VERSION >= 12090)
-        // approximate the spectral norm
-        double lo, up;
-        approximate_two_norm(
-            cublasH, solverH, dA_psd, n, &lo, &up
-        );
-        // scale to have eigenvalues in [-1, 1]
-        const double scale = up > 0.0 ? up : 1.0;
-        const double inv_scale = 1.0/scale;
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &inv_scale, dA_psd, 1) );
-        composite_FP32_emulated(cublasH, dA_psd, n);
-        // unscale
-        CHECK_CUBLAS( cublasDscal(cublasH, n*n, &scale, dA_psd, 1) );
-        #else
-        mexErrMsgTxt("composite_FP32_emulated is only supported with CUDA 12.9 or later.");
-        return;
-        #endif
+    else if (method == "adaptive_FP16" || method == "composite_FP16") {
+        AdaptiveOptions opts;
+        opts.tol = tol;
+        opts.precision = Precision::FP16;
+        rep = psd_projection_adaptive(cublasH, solverH, dA_psd, (int)n, opts);
+        is_adaptive = true;
     }
     else if (method == "eig_FP64") {
         eigenvals = eig_FP64_psd(solverH, cublasH, dA_psd, n, true);
     }
+    else if (method == "composite_FP32_emulated") {
+        mexErrMsgTxt("'composite_FP32_emulated' has been removed (the BF16x9 "
+                     "emulated fixed composite is no longer built). Use 'adaptive' "
+                     "for FP32 accuracy at fewer GEMMs, or 'adaptive_FP16' for "
+                     "tensor-core throughput. See MIGRATION.md.");
+        return;
+    }
     else if (method == "eig_FP32") {
-        eigenvals = eig_FP32_psd(solverH, cublasH, dA_psd, n, true);
+        mexErrMsgTxt("'eig_FP32' has been removed (cuSOLVER single-precision "
+                     "eigendecomposition). Use 'eig_FP64' for the exact reference "
+                     "projection, or 'adaptive' for the fast approximate one. "
+                     "See MIGRATION.md.");
+        return;
     } else {
-        mexErrMsgTxt("Unknown method. Supported methods: 'composite_FP16', 'composite_FP32', 'composite_FP32_emulated', 'eig_FP64', and 'eig_FP32'.");
+        mexErrMsgTxt("Unknown method. Supported methods: 'adaptive' (= 'adaptive_FP32'), "
+                     "'adaptive_FP16', and 'eig_FP64'. The names 'composite_FP32' and "
+                     "'composite_FP16' are accepted as deprecated aliases of the "
+                     "adaptive methods.");
         return;
     }
 
@@ -172,12 +187,16 @@ void mexFunction(int nlhs, mxArray* plhs[], int nrhs, const mxArray* prhs[]) {
     double* cpu_At_psd_vals = mxGetPr(plhs[0]);
     CHECK_CUDA(cudaMemcpy(cpu_At_psd_vals, dA_psd, n * n * sizeof(double), D2H));
 
-    if (method == "eig_FP64" || method == "eig_FP32") {
-        plhs[1] = mxCreateDoubleMatrix(n, 1, mxREAL);
-        double* cpu_eigenvals = mxGetPr(plhs[1]);
-        CHECK_CUDA(cudaMemcpy(cpu_eigenvals, eigenvals, n * sizeof(double), D2H));
-        CHECK_CUDA(cudaFree(eigenvals));
+    if (nlhs > 1) {
+        if (method == "eig_FP64") {
+            plhs[1] = mxCreateDoubleMatrix(n, 1, mxREAL);
+            double* cpu_eigenvals = mxGetPr(plhs[1]);
+            CHECK_CUDA(cudaMemcpy(cpu_eigenvals, eigenvals, n * sizeof(double), D2H));
+        } else if (is_adaptive) {
+            plhs[1] = make_report_struct(rep);
+        }
     }
+    if (eigenvals) CHECK_CUDA(cudaFree(eigenvals));
 
     CHECK_CUDA(cudaDeviceSynchronize());
 

@@ -79,14 +79,14 @@ __global__ void convert_float_to_double_kernel(const float* in, double* out, int
 /// @param d_in the input array of doubles in device memory
 /// @param d_out the output array of floats in device memory
 /// @param n the number of elements in the input array
-/// @param threadsPerBlock number of threads per block for the kernel launch (default is
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is 1024)
 void convert_double_to_float(const double* d_in, float* d_out, int n, const int threadsPerBlock = 1024);
 
-/// @brief Convert an array of doubles to floats in device memory.
-/// @param d_in the input array of doubles in device memory
-/// @param d_out the output array of floats in device memory
+/// @brief Convert an array of floats to doubles in device memory.
+/// @param d_in the input array of floats in device memory
+/// @param d_out the output array of doubles in device memory
 /// @param n the number of elements in the input array
-/// @param threadsPerBlock number of threads per block for the kernel launch (default is
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is 1024)
 void convert_float_to_double(const float* d_in, double* d_out, int n, const int threadsPerBlock = 1024);
 
 __global__ void build_identity_kernel(float* mat, int n);
@@ -145,10 +145,12 @@ void identity_plus(
 
 __global__ void fill_random_kernel(double* vec, int n, unsigned long seed);
 
-/// @brief Fills a vector with random floats in (0,1] using the CUDA random number generator.
+/// @brief Fills a vector with random doubles UNIFORM in (0,1] (curand_uniform_double).
+///        Note the entries are all positive -- this is not a zero-mean/Gaussian fill.
 /// @param vec Device pointer to the vector to fill
 /// @param n Size of the vector
 /// @param seed Seed for the random number generator
+/// @param threadsPerBlock number of threads per block for the kernel launch (default is 1024)
 void fill_random(double* vec, int n, unsigned long seed = 0, const int threadsPerBlock = 1024);
 
 unsigned long make_seed();

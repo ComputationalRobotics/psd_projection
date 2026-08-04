@@ -251,9 +251,13 @@ void approximate_two_norm(
     CHECK_CUBLAS(cublasDgemv(cublasH, CUBLAS_OP_T, n, n,
                                 &one, A, n, ry, 1,
                                 &zero, w1, 1));
-    // ry = w1
+    // BUG (kept for bit-compatibility with the published baseline): cublasDcopy's
+    // FIRST vector is the SOURCE, so this copies ry INTO w1 and DISCARDS the
+    // A^T*(A*y) product just written into w1.  The intent was `cublasDcopy(cublasH,
+    // n, w1, 1, ry, 1)`, as in the Lanczos loop above.  Consequently ry still holds
+    // A*y, and the residual formed below is A*y - theta*y, NOT A^T*A*y - theta*y,
+    // so `up` is not the intended Ritz+residual bound.
     CHECK_CUBLAS(cublasDcopy(cublasH, n, ry, 1, w1, 1));
-    // hence ry = A^T * A * y
 
     // ry = ry - theta * y
     double minus_theta = -theta;
