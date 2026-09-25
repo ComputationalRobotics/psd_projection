@@ -1,6 +1,15 @@
 #ifndef PSD_PROJECTION_LOBPCG_H
 #define PSD_PROJECTION_LOBPCG_H
 
+#include <limits>
+
+/// @brief Convergence information returned by `lobpcg`.
+struct LobpcgInfo {
+    int iterations;       ///< number of Rayleigh-Ritz updates performed
+    double residual_norm; ///< max_j ||A v_j - d_j v_j||_2 over the returned pairs with d_j > conv_threshold
+    bool converged;       ///< residual_norm < tol and every cuSOLVER call succeeded
+};
+
 /// @brief Computes the largest `m` eigenpairs of a symmetric matrix `A` using the LOBPCG algorithm.
 /// @param cublasH cuBLAS handle
 /// @param cusolverH cuSOLVER handle for QR and eigenvalue decompositions
@@ -13,9 +22,10 @@
 /// @param maxiter maximum number of iterations
 /// @param tol convergence tolerance
 /// @param verbose if true, print verbose output
+/// @param info optional output: iterations, residual norm of the returned pairs, and convergence flag. If null and a cuSOLVER factorization fails, a std::runtime_error is thrown.
+/// @param conv_threshold only the Ritz pairs with value > conv_threshold take part in the convergence test (default: all pairs)
 /// @note The eigenpairs are returned in decreasing order of the eigenvalues. The convergence test uses the largest
-///       per-column residual norm ||A v_j - d_j v_j||_2, evaluated on the returned pairs. A std::runtime_error is
-///       thrown if a cuSOLVER factorization fails.
+///       per-column residual norm ||A v_j - d_j v_j||_2 among the checked pairs, evaluated on the returned pairs.
 void lobpcg(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,
@@ -27,7 +37,9 @@ void lobpcg(
     const bool warmstart = false,
     const int maxiter = 100, // maximum iterations
     const double tol = 1e-8,  // convergence tolerance
-    const bool verbose = false // verbosity flag
+    const bool verbose = false, // verbosity flag
+    LobpcgInfo* info = nullptr, // optional convergence information
+    const double conv_threshold = -std::numeric_limits<double>::infinity()
 );
 
 #endif // PSD_PROJECTION_LOBPCG_H

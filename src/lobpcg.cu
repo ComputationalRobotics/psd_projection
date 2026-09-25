@@ -53,7 +53,9 @@ void lobpcg(
     const bool warmstart,
     const int maxiter, // maximum iterations
     const double tol,   // convergence tolerance
-    const bool verbose
+    const bool verbose,
+    LobpcgInfo* info,
+    const double conv_threshold
 ) {
     assert(m > 0);
     assert(n > 0);
@@ -84,6 +86,7 @@ void lobpcg(
     double max_res = std::numeric_limits<double>::infinity(); // residual of the current (X_k, Lam_k)
     bool converged = false;
     bool failed = false; // a cuSOLVER call reported devInfo != 0
+    int nb_updates = 0;  // number of Rayleigh-Ritz updates performed
 
     // useful constants
     const double one = 1.0;
@@ -209,13 +212,14 @@ void lobpcg(
         // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
-        // largest per-column residual norm
+        // largest residual norm among the Ritz pairs with value > conv_threshold
         column_norms(R_k, R_norms, n, m);
         CHECK_CUDA(cudaMemcpy(h_R_norms.data(), R_norms, m * sizeof(double), D2H));
         CHECK_CUDA(cudaMemcpy(h_Lam_k.data(), Lam_k, m * sizeof(double), D2H));
         max_res = 0.0;
         for (int j = 0; j < m; j++) {
-            max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
+            if (h_Lam_k[j] > conv_threshold)
+                max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
             if (std::isnan(h_R_norms[j]) || std::isnan(h_Lam_k[j]))
                 max_res = std::numeric_limits<double>::quiet_NaN();
         }
@@ -300,6 +304,13 @@ void lobpcg(
         // Lam_k = Lam_all(2m:3m)
         CHECK_CUBLAS(cublasDcopy(cublasH, m, Lam_all + 2*m, 1, Lam_k_tmp, 1));
         reverse_vector(Lam_k_tmp, Lam_k, m);
+        nb_updates++;
+    }
+
+    if (info != nullptr) {
+        info->iterations = nb_updates;
+        info->residual_norm = max_res;
+        info->converged = converged && !failed;
     }
 
     /* Copy results to output */
@@ -331,6 +342,6 @@ void lobpcg(
     CHECK_CUDA(cudaFree(d_work_eig_XRD));
     CHECK_CUDA(cudaFree(R_norms));
 
-    if (failed)
+    if (failed && info == nullptr)
         throw std::runtime_error("lobpcg: a cuSOLVER factorization failed (devInfo != 0)");
 }
