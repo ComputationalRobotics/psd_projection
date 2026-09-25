@@ -224,16 +224,14 @@ void lobpcg(
         // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
-        // largest residual norm among the first min_checked Ritz pairs and the pairs whose Ritz interval
-        // [lambda_j - ||r_j||, lambda_j + ||r_j||] reaches above conv_threshold: a pair is left out only if it
-        // certifiably approximates an eigenvalue below the threshold (Ritz values are lower bounds, and an
-        // unconverged pair below the threshold may be hiding an eigenvalue above it)
+        // largest residual norm among the first min_checked Ritz pairs and the pairs with value > conv_threshold
+        // (Ritz values are lower bounds: a pair below the threshold may still be an unconverged direction)
         column_norms(R_k, R_norms, n, m);
         CHECK_CUDA(cudaMemcpy(h_R_norms.data(), R_norms, m * sizeof(double), D2H));
         CHECK_CUDA(cudaMemcpy(h_Lam_k.data(), Lam_k, m * sizeof(double), D2H));
         max_res = 0.0;
         for (int j = 0; j < m; j++) {
-            if (j < min_checked || h_Lam_k[j] + h_R_norms[j] > conv_threshold)
+            if (j < min_checked || h_Lam_k[j] > conv_threshold)
                 max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
             if (std::isnan(h_R_norms[j]) || std::isnan(h_Lam_k[j]))
                 max_res = std::numeric_limits<double>::quiet_NaN();
@@ -243,8 +241,10 @@ void lobpcg(
             std::cout << "LOBPCG iter: " << iter << " max_j ||r_j|| = " << max_res << std::endl;
         }
 
-        // if the largest checked residual is less than tol, break
-        if (max_res < tol) {
+        // if the largest checked residual is less than tol, break; at least one Rayleigh-Ritz update is
+        // required: the (orthonormalized) residual block brings into the search subspace any direction that
+        // couples to the start subspace, e.g. a new eigenvector hidden behind a pair below conv_threshold
+        if (max_res < tol && nb_updates > 0) {
             converged = true;
             if (verbose) {
                 std::cout << "Converged: max_j ||r_j|| < tol" << std::endl;

@@ -23,14 +23,14 @@ struct LobpcgInfo {
 /// @param tol convergence tolerance
 /// @param verbose if true, print verbose output
 /// @param info optional output: iterations, residual norm of the returned pairs, and convergence flag. If null and a cuSOLVER factorization fails, a std::runtime_error is thrown.
-/// @param conv_threshold a Ritz pair (d_j, v_j) with residual norm r_j is left out of the convergence test only if
-///        d_j + r_j <= conv_threshold, i.e. if it certifiably approximates an eigenvalue below the threshold; all other
-///        pairs take part (default: all pairs)
+/// @param conv_threshold only the Ritz pairs with value > conv_threshold take part in the convergence test (default: all pairs)
 /// @param min_checked the first min_checked Ritz pairs always take part in the convergence test, whatever their value
 ///        (Ritz values are lower bounds of the eigenvalues: without it, a start subspace whose Ritz values are all below
 ///        conv_threshold, e.g. a random one, is reported as converged after 0 iterations)
-/// @note Convergence only concerns the search subspace: an eigenvector (numerically) orthogonal to it, e.g. to an
-///       exactly invariant warm start, cannot be detected by any residual or Ritz-value test.
+/// @note Convergence is only declared after at least one Rayleigh-Ritz update, so that the residual block has
+///       expanded the search subspace once (with maxiter = 0 the result is reported as not converged). An eigenvector
+///       (numerically) orthogonal to the search subspace, e.g. to an exactly invariant warm start, cannot be detected
+///       by any residual or Ritz-value test.
 /// @note The eigenpairs are returned in decreasing order of the eigenvalues. The convergence test uses the largest
 ///       per-column residual norm ||A v_j - d_j v_j||_2 among the checked pairs, evaluated on the returned pairs.
 void lobpcg(
