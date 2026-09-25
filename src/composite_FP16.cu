@@ -24,7 +24,8 @@ void composite_FP16(
 
     /* Allocations */
     // device memory
-    int stride = nn % 4 == 0 ? nn : nn + (4 - nn % 4);
+    // offsets in size_t: 2 * stride overflows an int for n >= 32768
+    size_t stride = nn % 4 == 0 ? (size_t)nn : (size_t)nn + (4 - nn % 4);
     float *A, *A2, *A3;
     if (float_workspace == nullptr) {
         CHECK_CUDA( cudaMalloc(&A,  nn * sizeof(float)) );

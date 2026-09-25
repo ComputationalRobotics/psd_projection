@@ -29,8 +29,8 @@ void composite_FP32(
         CHECK_CUDA( cudaMalloc(&A3, nn * sizeof(float)) );
     } else {
         A = workspace;
-        A2 = workspace + nn;
-        A3 = workspace + 2 * nn;
+        A2 = workspace + (size_t)nn;     // offsets in size_t: 2 * nn overflows an int for n >= 32768
+        A3 = workspace + 2 * (size_t)nn;
     }
 
     // useful constants
