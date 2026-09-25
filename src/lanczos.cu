@@ -191,6 +191,8 @@ void approximate_two_norm(
     CHECK_CUDA(cudaMalloc(&d_alpha,           nb_iter * sizeof(double)));
     CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), nb_iter * sizeof(double), H2D));
     CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  nb_iter * sizeof(double), H2D));
+    // fill_tridiagonal only writes the three diagonals: zero the rest of T
+    CHECK_CUDA(cudaMemset(T, 0, nb_iter * nb_iter * sizeof(double)));
     fill_tridiagonal(
         T, d_alpha, d_beta, nb_iter
     );
@@ -398,6 +400,8 @@ double compute_eigenpairs(
     CHECK_CUDA(cudaMalloc(&d_beta,      (nb_iter - 1) * sizeof(double)));
     CHECK_CUDA(cudaMemcpy(d_alpha, alpha.data(), nb_iter * sizeof(double), H2D));
     CHECK_CUDA(cudaMemcpy(d_beta,  beta.data(),  (nb_iter - 1) * sizeof(double), H2D));
+    // fill_tridiagonal only writes the three diagonals: zero the rest of T
+    CHECK_CUDA(cudaMemset(T, 0, nb_iter * nb_iter * sizeof(double)));
     fill_tridiagonal(
         T, d_alpha, d_beta, nb_iter
     );
