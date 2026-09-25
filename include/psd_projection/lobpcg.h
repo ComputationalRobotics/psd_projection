@@ -13,6 +13,9 @@
 /// @param maxiter maximum number of iterations
 /// @param tol convergence tolerance
 /// @param verbose if true, print verbose output
+/// @note The eigenpairs are returned in decreasing order of the eigenvalues. The convergence test uses the largest
+///       per-column residual norm ||A v_j - d_j v_j||_2, evaluated on the returned pairs. A std::runtime_error is
+///       thrown if a cuSOLVER factorization fails.
 void lobpcg(
     cublasHandle_t cublasH,
     cusolverDnHandle_t cusolverH,

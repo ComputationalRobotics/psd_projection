@@ -4,10 +4,43 @@
 #include <vector>
 #include <cassert>
 #include <cstdio>
+#include <cmath>
+#include <limits>
+#include <stdexcept>
+#include <algorithm>
 
 #include "psd_projection/lobpcg.h"
 #include "psd_projection/check.h"
 #include "psd_projection/utils.h"
+
+// norms[j] = ||R(:, j)||_2 for an n x m column-major matrix R (one thread per column, no shared memory)
+__global__ void column_norms_kernel(const double* R, double* norms, const int n, const int m) {
+    int j = blockIdx.x * blockDim.x + threadIdx.x;
+    if (j < m) {
+        const double* col = R + (size_t)j * n;
+        double s = 0.0;
+        for (int i = 0; i < n; i++)
+            s += col[i] * col[i];
+        norms[j] = sqrt(s);
+    }
+}
+
+static void column_norms(const double* R, double* norms, const int n, const int m) {
+    const int threads = 64;
+    column_norms_kernel<<<(m + threads - 1) / threads, threads>>>(R, norms, n, m);
+    CHECK_CUDA(cudaGetLastError());
+}
+
+// Returns true if the cuSOLVER devInfo is 0, otherwise prints a warning and returns false.
+static bool check_dev_info(const int* devInfo, const char* what) {
+    int hInfo = 0;
+    CHECK_CUDA(cudaMemcpy(&hInfo, devInfo, sizeof(int), cudaMemcpyDeviceToHost));
+    if (hInfo != 0) {
+        std::fprintf(stderr, "LOBPCG: %s failed: devInfo = %d\n", what, hInfo);
+        return false;
+    }
+    return true;
+}
 
 void lobpcg(
     cublasHandle_t cublasH,
@@ -45,7 +78,12 @@ void lobpcg(
     CHECK_CUDA(cudaMalloc(&T_tmp_XRD,    n * 3*m * sizeof(double)));
     CHECK_CUDA(cudaMalloc(&R_k,          n * 3*m * sizeof(double)));
 
-    double norm_R_k;
+    double *R_norms; // per-column residual norms ||A x_j - lambda_j x_j||_2
+    CHECK_CUDA(cudaMalloc(&R_norms, m * sizeof(double)));
+    std::vector<double> h_R_norms(m), h_Lam_k(m);
+    double max_res = std::numeric_limits<double>::infinity(); // residual of the current (X_k, Lam_k)
+    bool converged = false;
+    bool failed = false; // a cuSOLVER call reported devInfo != 0
 
     // useful constants
     const double one = 1.0;
@@ -92,16 +130,23 @@ void lobpcg(
         double *d_work, *tau;
         int lwork;
         CHECK_CUDA(cudaMalloc(&tau, m * sizeof(double)));
+        int lwork_orgqr_x = 0;
         CHECK_CUSOLVER(cusolverDnDgeqrf_bufferSize(cusolverH, n, m, X_k, n, &lwork));
+        CHECK_CUSOLVER(cusolverDnDorgqr_bufferSize(cusolverH, n, m, m, X_k, n, tau, &lwork_orgqr_x));
+        lwork = std::max(lwork, lwork_orgqr_x);
         CHECK_CUDA(cudaMalloc(&d_work, lwork * sizeof(double)));
 
         fill_random(X_k, n * m, 0);
 
         // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
+        if (!check_dev_info(devInfo, "initial GEQRF"))
+            failed = true;
 
         // generate Q from the result (X_k overwritten with Q)
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, m, m, X_k, n, tau, d_work, lwork, devInfo));
+        if (!check_dev_info(devInfo, "initial ORGQR"))
+            failed = true;
 
         CHECK_CUDA(cudaFree(d_work));
         CHECK_CUDA(cudaFree(tau));
@@ -130,19 +175,23 @@ void lobpcg(
     // both are in increasing order
     CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                     m, T, m, Lam_k_tmp, d_work_eig, lwork_eig, devInfo));
+    if (!check_dev_info(devInfo, "initial SYEVD"))
+        failed = true;
     // reverse Lam_k_tmp to get Lam_k in decreasing order
     reverse_vector(Lam_k_tmp, Lam_k, m);
+    // reverse the columns of T accordingly, so that column j of X_k matches Lam_k[j]
+    reverse_columns(T, T_tmp, m, m);
 
     // X_k = Q * T
     CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, m,
-                             &one, X_k, n, T, m,
+                             &one, X_k, n, T_tmp, m,
                              &zero, Delta_X_k, n));
     CHECK_CUDA(cudaMemcpy(X_k, Delta_X_k, n * m * sizeof(double), D2D));
 
     // Delta_X_k = X_k
     CHECK_CUBLAS(cublasDcopy_v2(cublasH, n * m, X_k, 1, Delta_X_k, 1));
 
-    for (int iter = 1; iter <= maxiter; iter++) {
+    for (int iter = 1; !failed; iter++) {
         // R_k = A * X_k - X_k * Lam_k
         CHECK_CUBLAS(cublasDgemm(cublasH, CUBLAS_OP_N, CUBLAS_OP_N, n, m, n,
                                  &one, A, n, X_k, n,
@@ -160,19 +209,31 @@ void lobpcg(
         // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
-        CHECK_CUBLAS(cublasDnrm2(cublasH, n * m, R_k, 1, &norm_R_k));
-
-        if (verbose) {
-            std::cout << "LOBPCG iter: " << iter << " ||R_k||_F = " << norm_R_k << std::endl;
+        // largest per-column residual norm
+        column_norms(R_k, R_norms, n, m);
+        CHECK_CUDA(cudaMemcpy(h_R_norms.data(), R_norms, m * sizeof(double), D2H));
+        CHECK_CUDA(cudaMemcpy(h_Lam_k.data(), Lam_k, m * sizeof(double), D2H));
+        max_res = 0.0;
+        for (int j = 0; j < m; j++) {
+            max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
+            if (std::isnan(h_R_norms[j]) || std::isnan(h_Lam_k[j]))
+                max_res = std::numeric_limits<double>::quiet_NaN();
         }
 
-        // if the norm of R_k is less than tol, break
-        if (norm_R_k < tol) {
+        if (verbose) {
+            std::cout << "LOBPCG iter: " << iter << " max_j ||r_j|| = " << max_res << std::endl;
+        }
+
+        // if the largest checked residual is less than tol, break
+        if (max_res < tol) {
+            converged = true;
             if (verbose) {
-                std::cout << "Converged: ||R_k||_F < tol" << std::endl;
+                std::cout << "Converged: max_j ||r_j|| < tol" << std::endl;
             }
             break;
         }
+        if (iter > maxiter || std::isnan(max_res))
+            break;
 
         // concatenate X_k, R_k, and Delta_X_k into XRD
         CHECK_CUDA(cudaMemcpy(XRD            ,       X_k, n * m * sizeof(double), D2D));
@@ -180,17 +241,15 @@ void lobpcg(
         CHECK_CUDA(cudaMemcpy(XRD + 2 * n * m, Delta_X_k, n * m * sizeof(double), D2D));
 
         // compute QR factorization of XRD
-        int hInfo = -1;
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
-        CHECK_CUDA(cudaMemcpy(&hInfo, devInfo, sizeof(int), cudaMemcpyDeviceToHost));
-        if (hInfo != 0) {
-            std::fprintf(stderr, "QR/GEQRF failed: devInfo = %d\n", hInfo);
-            std::exit(1);
+        if (!check_dev_info(devInfo, "QR/GEQRF")) {
+            failed = true;
+            break;
         }
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, 3*m, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
-        if (hInfo != 0) {
-            std::fprintf(stderr, "QR/ORGQR failed: devInfo = %d\n", hInfo);
-            std::exit(1);
+        if (!check_dev_info(devInfo, "QR/ORGQR")) {
+            failed = true;
+            break;
         }
 
         // T = Q^T * A * Q
@@ -215,6 +274,10 @@ void lobpcg(
         // both are in increasing order
         CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                         3*m, T_XRD, 3*m, Lam_all, d_work_eig_XRD, lwork_eig_XRD, devInfo));
+        if (!check_dev_info(devInfo, "SYEVD")) {
+            failed = true; // X_k and Lam_k still hold the last (checked) iterate
+            break;
+        }
         // reverse columns of T_XRD
         reverse_columns(T_XRD, T_tmp_XRD, 3*m, 3*m);
 
@@ -266,4 +329,8 @@ void lobpcg(
     CHECK_CUDA(cudaFree(T_XRD));
     CHECK_CUDA(cudaFree(XRD_tmp));
     CHECK_CUDA(cudaFree(d_work_eig_XRD));
+    CHECK_CUDA(cudaFree(R_norms));
+
+    if (failed)
+        throw std::runtime_error("lobpcg: a cuSOLVER factorization failed (devInfo != 0)");
 }
