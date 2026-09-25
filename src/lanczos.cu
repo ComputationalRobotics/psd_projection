@@ -252,7 +252,7 @@ void approximate_two_norm(
                                 &one, A, n, ry, 1,
                                 &zero, w1, 1));
     // ry = w1
-    CHECK_CUBLAS(cublasDcopy(cublasH, n, ry, 1, w1, 1));
+    CHECK_CUBLAS(cublasDcopy(cublasH, n, w1, 1, ry, 1));
     // hence ry = A^T * A * y
 
     // ry = ry - theta * y
