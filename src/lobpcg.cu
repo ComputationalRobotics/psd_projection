@@ -55,7 +55,8 @@ void lobpcg(
     const double tol,   // convergence tolerance
     const bool verbose,
     LobpcgInfo* info,
-    const double conv_threshold
+    const double conv_threshold,
+    const int min_checked
 ) {
     assert(m > 0);
     assert(n > 0);
@@ -212,13 +213,14 @@ void lobpcg(
         // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
-        // largest residual norm among the Ritz pairs with value > conv_threshold
+        // largest residual norm among the first min_checked Ritz pairs and the pairs with value > conv_threshold
+        // (Ritz values are lower bounds: a pair below the threshold may still be an unconverged direction)
         column_norms(R_k, R_norms, n, m);
         CHECK_CUDA(cudaMemcpy(h_R_norms.data(), R_norms, m * sizeof(double), D2H));
         CHECK_CUDA(cudaMemcpy(h_Lam_k.data(), Lam_k, m * sizeof(double), D2H));
         max_res = 0.0;
         for (int j = 0; j < m; j++) {
-            if (h_Lam_k[j] > conv_threshold)
+            if (j < min_checked || h_Lam_k[j] > conv_threshold)
                 max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
             if (std::isnan(h_R_norms[j]) || std::isnan(h_Lam_k[j]))
                 max_res = std::numeric_limits<double>::quiet_NaN();
