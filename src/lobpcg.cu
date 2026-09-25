@@ -31,6 +31,12 @@ static void column_norms(const double* R, double* norms, const int n, const int 
     CHECK_CUDA(cudaGetLastError());
 }
 
+// Writes a sentinel (-1) to devInfo before a cuSOLVER call: a call that fails without writing devInfo
+// (e.g. an invalid argument or an internal allocation failure) is then detected by check_dev_info.
+static void reset_dev_info(int* devInfo) {
+    CHECK_CUDA(cudaMemset(devInfo, 0xFF, sizeof(int)));
+}
+
 // Returns true if the cuSOLVER devInfo is 0, otherwise prints a warning and returns false.
 static bool check_dev_info(const int* devInfo, const char* what) {
     int hInfo = 0;
@@ -83,7 +89,9 @@ void lobpcg(
 
     double *R_norms; // per-column residual norms ||A x_j - lambda_j x_j||_2
     CHECK_CUDA(cudaMalloc(&R_norms, m * sizeof(double)));
-    std::vector<double> h_R_norms(m), h_Lam_k(m);
+    // NaN until copied back, so that a failed copy cannot look like convergence
+    std::vector<double> h_R_norms(m, std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> h_Lam_k(m, std::numeric_limits<double>::quiet_NaN());
     double max_res = std::numeric_limits<double>::infinity(); // residual of the current (X_k, Lam_k)
     bool converged = false;
     bool failed = false; // a cuSOLVER call reported devInfo != 0
@@ -143,11 +151,13 @@ void lobpcg(
         fill_random(X_k, n * m, 0);
 
         // compute QR factorization (X_k overwritten with R, tau contains Householder scalars)
+        reset_dev_info(devInfo);
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, m, X_k, n, tau, d_work, lwork, devInfo));
         if (!check_dev_info(devInfo, "initial GEQRF"))
             failed = true;
 
         // generate Q from the result (X_k overwritten with Q)
+        reset_dev_info(devInfo);
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, m, m, X_k, n, tau, d_work, lwork, devInfo));
         if (!check_dev_info(devInfo, "initial ORGQR"))
             failed = true;
@@ -177,6 +187,7 @@ void lobpcg(
 
     // compute eigenvalues and eigenvectors of T
     // both are in increasing order
+    reset_dev_info(devInfo);
     CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                     m, T, m, Lam_k_tmp, d_work_eig, lwork_eig, devInfo));
     if (!check_dev_info(devInfo, "initial SYEVD"))
@@ -213,14 +224,16 @@ void lobpcg(
         // substract it from R_k
         CHECK_CUBLAS(cublasDaxpy(cublasH, n * m, &neg1, X_k_tmp, 1, R_k, 1));
 
-        // largest residual norm among the first min_checked Ritz pairs and the pairs with value > conv_threshold
-        // (Ritz values are lower bounds: a pair below the threshold may still be an unconverged direction)
+        // largest residual norm among the first min_checked Ritz pairs and the pairs whose Ritz interval
+        // [lambda_j - ||r_j||, lambda_j + ||r_j||] reaches above conv_threshold: a pair is left out only if it
+        // certifiably approximates an eigenvalue below the threshold (Ritz values are lower bounds, and an
+        // unconverged pair below the threshold may be hiding an eigenvalue above it)
         column_norms(R_k, R_norms, n, m);
         CHECK_CUDA(cudaMemcpy(h_R_norms.data(), R_norms, m * sizeof(double), D2H));
         CHECK_CUDA(cudaMemcpy(h_Lam_k.data(), Lam_k, m * sizeof(double), D2H));
         max_res = 0.0;
         for (int j = 0; j < m; j++) {
-            if (j < min_checked || h_Lam_k[j] > conv_threshold)
+            if (j < min_checked || h_Lam_k[j] + h_R_norms[j] > conv_threshold)
                 max_res = std::max(max_res, h_R_norms[j]); // NaN residuals are caught below
             if (std::isnan(h_R_norms[j]) || std::isnan(h_Lam_k[j]))
                 max_res = std::numeric_limits<double>::quiet_NaN();
@@ -247,11 +260,13 @@ void lobpcg(
         CHECK_CUDA(cudaMemcpy(XRD + 2 * n * m, Delta_X_k, n * m * sizeof(double), D2D));
 
         // compute QR factorization of XRD
+        reset_dev_info(devInfo);
         CHECK_CUSOLVER(cusolverDnDgeqrf(cusolverH, n, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
         if (!check_dev_info(devInfo, "QR/GEQRF")) {
             failed = true;
             break;
         }
+        reset_dev_info(devInfo);
         CHECK_CUSOLVER(cusolverDnDorgqr(cusolverH, n, 3*m, 3*m, XRD, n, tau_xrd, d_work_xrd, lwork_xrd, devInfo));
         if (!check_dev_info(devInfo, "QR/ORGQR")) {
             failed = true;
@@ -278,6 +293,7 @@ void lobpcg(
 
         // compute eigenvalues and eigenvectors of T
         // both are in increasing order
+        reset_dev_info(devInfo);
         CHECK_CUSOLVER(cusolverDnDsyevd(cusolverH, CUSOLVER_EIG_MODE_VECTOR, CUBLAS_FILL_MODE_UPPER,
                                         3*m, T_XRD, 3*m, Lam_all, d_work_eig_XRD, lwork_eig_XRD, devInfo));
         if (!check_dev_info(devInfo, "SYEVD")) {
